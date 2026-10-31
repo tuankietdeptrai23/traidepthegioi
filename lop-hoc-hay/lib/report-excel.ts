@@ -16,7 +16,7 @@ function sheetXml(sheet:ReportSheet){
    return '<c r="'+ref+'" t="inlineStr" s="'+style+'"><is><t xml:space="preserve">'+xml(v)+'</t></is></c>';
  }).join('')+'</row>').join('');
  const merge=sheet.rows.length?'<mergeCells count="1"><mergeCell ref="A1:'+name(max-1)+'1"/></mergeCells>':'';
- return doc('<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:'+name(max-1)+Math.max(1,sheet.rows.length)+'"/><sheetViews><sheetView workbookViewId="0"><pane ySplit="'+Math.min(sheet.headerRow??3,sheet.rows.length)+'" topLeftCell="A'+((sheet.headerRow??3)+1)+'" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="20"/><cols>'+cols+'</cols><sheetData>'+rows+'</sheetData>'+merge+'<pageMargins left="0.3" right="0.3" top="0.5" bottom="0.5" header="0.2" footer="0.2"/></worksheet>');
+ return doc('<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:'+name(max-1)+Math.max(1,sheet.rows.length)+'"/><sheetViews><sheetView workbookViewId="0"><pane ySplit="'+Math.min((sheet.headerRow??3)+1,sheet.rows.length)+'" topLeftCell="A'+((sheet.headerRow??3)+2)+'" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="20"/><cols>'+cols+'</cols><sheetData>'+rows+'</sheetData>'+((sheet.rows.length>(sheet.headerRow??3))?'<autoFilter ref="A'+((sheet.headerRow??3)+1)+':'+name(max-1)+sheet.rows.length+'"/>':'')+merge+'<pageMargins left="0.3" right="0.3" top="0.5" bottom="0.5" header="0.2" footer="0.2"/></worksheet>');
 }
 function crc32(data:Uint8Array){let crc=0xffffffff;for(const b of data){crc^=b;for(let i=0;i<8;i++)crc=(crc>>>1)^((crc&1)?0xedb88320:0)}return (crc^0xffffffff)>>>0}
 function put16(a:number[],v:number){a.push(v&255,(v>>>8)&255)}
@@ -49,5 +49,6 @@ export function buildReportWorkbook(input:ReportSheet[]):Uint8Array{
 export function downloadReportWorkbook(filename:string,sheets:ReportSheet[]){
  const bytes=buildReportWorkbook(sheets);
  const blob=new Blob([new Uint8Array(bytes)],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
- const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=filename.replace(/[\\/:*?"<>|]/g,'-')+'.xlsx';a.click();URL.revokeObjectURL(url);
+ const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=filename.replace(/[\\/:*?"<>|]/g,'-')+'.xlsx';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
+

@@ -161,3 +161,12 @@ Kiểm tra cuối: 73 kiểm tra tích hợp + 7 kiểm tra danh sách; TypeScri
 - Lượt vi phạm đã duyệt tạo lượt trực tương ứng. Khi thiếu người, tổ cuối hỗ trợ; khi giáo viên xếp tay, lịch tự động không chiếm thêm suất vượt định mức.
 - Phong trào có thống kê, bộ lọc, quyền sửa/hủy hoạt động cho cán sự phụ trách; giáo viên giữ quyền chốt hoàn thành và cộng điểm.
 - **Migration bắt buộc khi triển khai:** `0005_fund_collections.sql` thêm bảng `fund_collections` và cột `funds.collection_id`. Sao lưu D1 và áp dụng migration trước khi đưa bản mới lên production. GitHub merge không tự đồng bộ ChatGPT Sites.
+
+
+
+## Tích hợp với Sites hiện tại
+
+- Nguồn GitHub main: `1ff070e804828105d1248c591d1d113f08b80c42`, thư mục `lop-hoc-hay/`.
+- Giữ các tính năng đã xuất bản tại thư mục gốc: báo cáo ngày, hồ sơ tháng, đổi trực, huy hiệu và sổ điểm cá nhân.
+- Không thay thế các migration đã áp dụng `0000`–`0006`. Nội dung của migration nguồn `0005_fund_collections.sql` được tích hợp thành migration nối tiếp `0007_fund_collections.sql` cùng metadata Drizzle sinh từ schema hợp nhất. Không chạy cả hai bản.
+- Giữ nguyên project Sites và D1 binding `DB`; triển khai không seed, reset hoặc đổi tài khoản.

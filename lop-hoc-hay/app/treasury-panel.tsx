@@ -41,7 +41,7 @@ export default function TreasuryPanel({d,canManage,busy,act}:{
  async function perform(action:string,payload:Row){setWorking(true);setError('');setNotice('');try{await act(action,payload);setNotice('Đã lưu thành công và cập nhật sổ quỹ.');return true}catch(e){setError((e as Error).message);return false}finally{setWorking(false)}}
  async function saveMarked(){
    if(!selected||!countMarked.length)return;
-   const payments=countMarked.map(s=>({studentId:s.id,amount:Math.round(Number(amounts[s.id]||Math.max(0,selected.amount-paid(selected,s.id))))}));
+   const payments=countMarked.map(s=>({studentId:s.id,amount:Number(amounts[s.id]||Math.max(0,selected.amount-paid(selected,s.id)))}));
    if(payments.some(x=>!Number.isSafeInteger(x.amount)||x.amount<=0||x.amount>selected.amount-paid(selected,x.studentId))){setError('Khoản đóng không được nhỏ hơn 1 hoặc vượt số còn thiếu.');return}
    if(await perform('recordFundCollections',{collectionId:selected.id,date:payDate,payments})){setMarked({});setAmounts({})}
  }
@@ -94,3 +94,4 @@ export default function TreasuryPanel({d,canManage,busy,act}:{
    <p className="treasury-footnote"><LockKeyhole size={15}/>Chỉ giáo viên và thủ quỹ được ghi nhận tiền. Việc thu tiền ngoài đời thực vẫn cần chứng từ và đối soát với tiền đang giữ.</p>
  </div>;
 }
+

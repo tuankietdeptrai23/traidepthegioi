@@ -4,7 +4,7 @@ import {Table2,SquarePen,Save,LockKeyhole,CheckCircle2,Info} from 'lucide-react'
 import {countPaste} from '@/lib/sheet-input';
 import {canReport,ruleScore,classSubjects,needsLearningSubject,type Row,type Rule} from '@/lib/domain';
 
-export default function CompetitionSheet({d,week,save,reorderRules,busy}:any){
+export default function CompetitionSheet({d,week,reportDate='',save,reorderRules,busy}:any){
  const roles:string[]=d.roles||[];
  const own=d.students.find((s:Row)=>s.id===d.ownId);
  const editor=d.teacher||roles.length>0;
@@ -21,13 +21,14 @@ export default function CompetitionSheet({d,week,save,reorderRules,busy}:any){
  const [error,setError]=useState('');
  const [message,setMessage]=useState('');
  useEffect(()=>{setDraft({});setError('');setMessage('')},[week]);
- const sheet=d.sheets?.[week]||{rules:d.config.rules,base:d.config.base,rows:d.students.filter((s:Row)=>s.active).map((s:Row)=>({...s,counts:{},subjectCounts:{},recorded:{},score:d.config.base}))};
+ const weeklySheet=d.sheets?.[week];
+ const sheet=(reportDate?(d.dailySheets?.[reportDate]||(weeklySheet?{...weeklySheet,rows:weeklySheet.rows.map((s:Row)=>({...s,counts:{},subjectCounts:{},recorded:{}}))}:null)):weeklySheet)||{rules:d.config.rules,base:d.config.base,rows:d.students.filter((s:Row)=>s.active).map((s:Row)=>({...s,counts:{},subjectCounts:{},recorded:{},score:d.config.base}))};
  const locked=d.periods.some((p:Row)=>p.week===week&&p.status==='locked');
  const rules:Rule[]=sheet.rules;
  const visibleRules=rules.filter(r=>category==='all'||r.category===category);
  const selected=rules.find(r=>r.id===selectedRuleId)||rules[0];
  const groups:Row[]=mode==='edit'?allowed.filter(g=>g.id===groupId):d.groups;
- const report=d.reports.find((r:Row)=>r.week===week&&r.groupId===groupId);
+ const report=d.reports.find((r:Row)=>r.week===week&&r.groupId===groupId&&(r.reportDate||'')===reportDate);
  const editable=editor&&mode==='edit'&&!locked&&(!report||report.status==='returned');
  const key=(id:string,rid:string,chosen=subject)=>id+'|'+rid+(needsLearningSubject(rules.find(r=>r.id===rid)!)?'|'+chosen:'');
  const inputValue=(s:Row,r:Rule):number|string=>{
@@ -65,18 +66,18 @@ export default function CompetitionSheet({d,week,save,reorderRules,busy}:any){
    setDraft(current=>({...current,[key(s.id,r.id)]:text}));
    setMessage('');
  };
- function paste(e:React.ClipboardEvent<HTMLInputElement>,rows:Row[],row:number,col:number){const text=e.clipboardData.getData('text');if(!/[\r\n\t]/.test(text))return;e.preventDefault();try{const parsed=countPaste(text,visibleRules.slice(col),rows.length-row,subject);setDraft(old=>{const next={...old};for(const p of parsed)next[key(rows[row+p.row].id,visibleRules[col+p.col].id)]=p.count===null?'':String(p.count);return next});setError('');setMessage('Đã dán '+parsed.length+' ô. Kiểm tra rồi lưu bảng.')}catch(err){setError((err as Error).message)}}
+ function paste(e:React.ClipboardEvent<HTMLInputElement>,rows:Row[],row:number,col:number){const text=e.clipboardData.getData('text');if(!/[\r\n\t]/.test(text))return;e.preventDefault();try{const parsed=countPaste(text,visibleRules.slice(col),rows.length-row,subject);if(reportDate&&!d.speakingAvailableDates?.includes(reportDate)&&parsed.some(p=>visibleRules[col+p.col].category==='speaking'))throw Error('Cột phát biểu đang khóa. Chỉ dán các cột được mở.');setDraft(old=>{const next={...old};for(const p of parsed)next[key(rows[row+p.row].id,visibleRules[col+p.col].id)]=p.count===null?'':String(p.count);return next});setError('');setMessage('Đã dán '+parsed.length+' ô. Kiểm tra rồi lưu bảng.')}catch(err){setError((err as Error).message)}}
  function navigate(e:React.KeyboardEvent<HTMLInputElement>,row:number,col:number){if(!['Enter','ArrowDown','ArrowUp'].includes(e.key))return;e.preventDefault();const next=row+(e.key==='ArrowUp'||e.shiftKey?-1:1);const input=e.currentTarget.closest('table')?.querySelector<HTMLInputElement>(`input[data-row="${next}"][data-col="${col}"]`);if(input&&!input.disabled)input.focus()}
  const cell=(s:Row,r:Rule,rows:Row[],row:number,col:number)=>mode==='edit'?
   <input data-row={row} data-col={col} onKeyDown={e=>navigate(e,row,col)} onPaste={e=>paste(e,rows,row,col)} aria-label={s.name+' - '+r.name+(needsLearningSubject(r)?' - '+(subject||'chưa chọn môn'):'')} type="number" inputMode="numeric" min="0" max={r.limit||100}
-      disabled={!editable||saving||busy||(needsLearningSubject(r)&&!subject)} value={inputValue(s,r)} placeholder={r.kind==='speaking-total'?'Chưa nhập':'—'}
+      disabled={!editable||saving||busy||(r.category==='speaking'&&reportDate&&!d.speakingAvailableDates?.includes(reportDate))||(needsLearningSubject(r)&&!subject)} value={inputValue(s,r)} placeholder={r.kind==='speaking-total'?'Chưa nhập':'—'}
       onChange={e=>update(s,r,e.target.value)}/>:
   <span>{r.kind==='speaking-total'?(s.recorded?.[r.id]?(s.counts[r.id]??0):'—'):(needsLearningSubject(r)?(subject?s.subjectCounts?.[r.id+'|'+subject]||'—':'Chọn môn'):(s.counts[r.id]||'—'))}</span>;
  async function commit(){
    setSaving(true);setError('');setMessage('');
    try{
      for(let i=0;i<changes.length;i+=80){
-       const part=changes.slice(i,i+80);await save({week,groupId,cells:part.map(({row,rule,...x})=>x)});const keys=new Set(part.map(c=>key(c.studentId,c.ruleId,c.subject)));setDraft(old=>Object.fromEntries(Object.entries(old).filter(([k])=>!keys.has(k))));
+       const part=changes.slice(i,i+80);await save({week,reportDate,groupId,cells:part.map(({row,rule,...x})=>x)});const keys=new Set(part.map(c=>key(c.studentId,c.ruleId,c.subject)));setDraft(old=>Object.fromEntries(Object.entries(old).filter(([k])=>!keys.has(k))));
      }
      setDraft({});setMessage('Đã lưu bảng. Gửi báo cáo để giáo viên hoặc cán sự có quyền duyệt.');
    }catch(e){setError((e as Error).message)}finally{setSaving(false)}
@@ -113,7 +114,7 @@ export default function CompetitionSheet({d,week,save,reorderRules,busy}:any){
     <div className="excel-scroll" role="region" aria-label={'Bảng thi đua '+g.name} tabIndex={0}>
      <table className="excel-table">
       <thead><tr className="excel-letters"><th>№</th><th>A</th>{visibleRules.map((r:Rule,i:number)=><th key={r.id}>{i+2}</th>)}<th>Σ</th><th>✓</th></tr>
-       <tr><th>STT</th><th className="student-column">Học sinh</th>{visibleRules.map(r=><th key={r.id} draggable={!!d.teacher&&!locked&&!moving} onDragStart={e=>{setDragRule(r.id);e.dataTransfer.setData('text/plain',r.id);e.dataTransfer.effectAllowed='move'}} onDragEnd={()=>setDragRule('')} onDragOver={e=>{if(d.teacher)e.preventDefault()}} onDrop={e=>{e.preventDefault();const source=e.dataTransfer.getData('text/plain')||dragRule;void moveRule(source,rules.findIndex(x=>x.id===r.id))}} className={(r.kind==='speaking-total'?'kpi-col':r.points>=0?'plus-col':'minus-col')+(dragRule===r.id?' rule-being-dragged':'')} title={d.teacher?'Kéo để di chuyển: '+r.name:r.name}><span>{r.name}</span><small>{r.kind==='speaking-total'?'Theo mốc KPI':(r.points>0?'+':'')+r.points+' đ/lần'}</small></th>)}<th className="total-column">Tạm tính</th><th className="total-column">Đã duyệt</th></tr>
+       <tr><th>STT</th><th className="student-column">Học sinh</th>{visibleRules.map(r=><th key={r.id} draggable={!!d.teacher&&!locked&&!moving} onDragStart={e=>{setDragRule(r.id);e.dataTransfer.setData('text/plain',r.id);e.dataTransfer.effectAllowed='move'}} onDragEnd={()=>setDragRule('')} onDragOver={e=>{if(d.teacher)e.preventDefault()}} onDrop={e=>{e.preventDefault();const source=e.dataTransfer.getData('text/plain')||dragRule;void moveRule(source,rules.findIndex(x=>x.id===r.id))}} className={(r.kind==='speaking-total'?'kpi-col':r.points>=0?'plus-col':'minus-col')+(dragRule===r.id?' rule-being-dragged':'')} title={d.teacher?'Kéo để di chuyển: '+r.name:r.name}><span>{r.name}</span><small>{r.kind==='speaking-total'?'Theo mốc KPI':(r.points>0?'+':'')+r.points+' đ/lần'}</small></th>)}<th className="total-column">Tạm tính<br/><small>cả tuần</small></th><th className="total-column">Đã duyệt<br/><small>cả tuần</small></th></tr>
       </thead><tbody>{rows.map((s,i)=><tr key={s.id}><td>{i+1}</td><td className="student-column"><b>{s.name}</b></td>{visibleRules.map((r,col)=>{
        const v=inputValue(s,r), delta=r.kind==='speaking-total'&&v!==''?ruleScore(r,Number(v)):Number(v||0)*r.points;
        return <td key={r.id} className={(delta>0?'has-plus':delta<0?'has-minus':'')+(draft[key(s.id,r.id)]!==undefined?' changed':'')}>{cell(s,r,rows,i,col)}</td>

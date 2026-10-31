@@ -10,6 +10,9 @@ export type Rule = {
 };
 export type AcademicBand = {min:number;points:number;kind:'learned'|'unlearned'};
 export type Config = {
+    reportMode?: 'weekly' | 'daily';
+    reportDays?: number[];
+    speakingOpenDates?: string[];
     academicBands?: AcademicBand[];
     timetable?: {weekday:number;subjects:string[]}[];
     base: number;
@@ -96,7 +99,7 @@ export function dutyPlan(snap: Row, week: string, config: Config, existing: Row[
     const balances=new Map<string,number>();
     for(const e of snap.entries||[]){
         if(!config.violationDuty||e.status!=='approved'||e.delta>=0||!eligibleIds.has(e.studentId))continue;
-        balances.set(e.studentId,Math.min(60,(balances.get(e.studentId)||0)+Math.min(30,Math.max(1,Number(e.count)||1))));
+        balances.set(e.studentId,(balances.get(e.studentId)||0)+Math.max(1,Math.floor(Number(e.count)||1)));
     }
     const totalViolations=[...balances.values()].reduce((a,b)=>a+b,0);
     const slotsEachDay=dutyTasks.reduce((n,x)=>n+x.limit,0);
@@ -106,15 +109,17 @@ export function dutyPlan(snap: Row, week: string, config: Config, existing: Row[
     const out:Row[]=[];
     const weekSeed=Math.floor(Date.parse(week+'T00:00:00Z')/604800000);
     const counts=new Map<string,number>();
+    for(const d of existing)if(eligibleIds.has(d.studentId))counts.set(d.studentId,(counts.get(d.studentId)||0)+1);
     let previousTask=new Map<string,string>();
     const lastDaysUsed=new Set<string>();
-    for(let round=0;round<12;round++){
+    const maxRounds=Math.max(1,...balances.values())+existing.length+1;
+    for(let round=0;round<maxRounds;round++){
         let made=0;
         for(const day of days){
             const date=dayPlus(week,7+7*round+day.weekday-1);
             const reserved=existing.filter(x=>x.date===date);
             const used=new Set<string>(reserved.map(x=>x.studentId));
-            const slots=dutyTasks.flatMap(t=>Array.from({length:Math.max(0,t.limit-reserved.filter(r=>r.task===t.task).length)},()=>t.task));
+            const slots=dutyTasks.flatMap(t=>Array.from({length:Math.max(0,t.limit-reserved.filter(r=>r.task===t.task||(t.task==='Trực lớp'&&['Quét lớp','Lau bàn','Vệ sinh lớp'].includes(r.task))).length)},()=>t.task));
             const available=eligible.filter(s=>!used.has(s.id));
             if(!available.length)continue;
             for(let slot=0;slot<slots.length;slot++){
@@ -127,6 +132,7 @@ export function dutyPlan(snap: Row, week: string, config: Config, existing: Row[
                 const fair=pool.slice().sort((a,b)=>{
                     const load=(counts.get(a.id)||0)-(counts.get(b.id)||0);
                     if(load)return load;
+                    if(task==='Đổ rác'&&config.preferMaleTrash&&a.gender!==b.gender){if(a.gender==='male')return -1;if(b.gender==='male')return 1;}
                     const repeated=Number(previousTask.get(a.id)===task)-Number(previousTask.get(b.id)===task);
                     if(repeated)return repeated;
                     return ((eligible.findIndex(x=>x.id===a.id)+weekSeed)%eligible.length)-
@@ -149,6 +155,9 @@ export function dutyPlan(snap: Row, week: string, config: Config, existing: Row[
 export function validateConfig(c: any): Config {
     if (!c || !Number.isInteger(c.base) || c.base < 0 || c.base > 10000 || !['sum', 'average'].includes(c.mode) || !Array.isArray(c.rules) || !c.rules.length || c.rules.length > 100)
         throw Error('Cấu hình điểm chưa hợp lệ');
+    if(c.reportMode!==undefined&&!['weekly','daily'].includes(c.reportMode))throw Error('Chế độ báo cáo không hợp lệ');
+    if(c.reportDays!==undefined&&(!Array.isArray(c.reportDays)||!c.reportDays.length||c.reportDays.some((d:any)=>!Number.isInteger(d)||d<1||d>6)||new Set(c.reportDays).size!==c.reportDays.length))throw Error('Chọn ngày báo cáo từ thứ Hai đến thứ Bảy');
+    if(c.speakingOpenDates!==undefined&&(!Array.isArray(c.speakingOpenDates)||c.speakingOpenDates.length>60||c.speakingOpenDates.some((d:any)=>typeof d!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(d)||!Number.isFinite(Date.parse(d+'T00:00:00Z'))||new Date(d+'T00:00:00Z').toISOString().slice(0,10)!==d)))throw Error('Ngày mở phát biểu không hợp lệ');
     const ids = new Set();
     for (const r of c.rules) {
         if (!r.id || ids.has(r.id) || typeof r.name !== 'string' || !r.name.trim() || r.name.length > 150 || !['attendance', 'absence', 'learning', 'speaking', 'uniform', 'discipline', 'movement'].includes(r.category) || !Number.isInteger(r.points) || Math.abs(r.points) > 1000 || (r.limit !== undefined && (!Number.isInteger(r.limit) || r.limit < 1 || r.limit > 100)))

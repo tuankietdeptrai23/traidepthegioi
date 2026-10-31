@@ -1,3 +1,4 @@
+import {reportDate as getReportDate,speakingAllowed,requiredReportDates,vietnamToday,monthlyProfile} from './class-tools';
 import {academicGrade,academicBand,academicPrefix} from './academic-grid';
 import { eq, and, or, inArray, sql } from 'drizzle-orm';
 import { getDb } from '@/db';
@@ -56,8 +57,8 @@ export async function state(classId?: string) {
     const c = await context(classId);
     const { teacher, own, roles } = c;
     const classFilter = (table: any) => eq(table.classId, classId);
-    const [groups, students, periods, entries, reports, grades, conduct, funds, collections, activities, duties, notices, feedback, audit] = await Promise.all([
-        db.select().from(t.groups).where(classFilter(t.groups)), db.select().from(t.students).where(classFilter(t.students)), db.select().from(t.periods).where(classFilter(t.periods)), db.select().from(t.entries).where(classFilter(t.entries)), db.select().from(t.reports).where(classFilter(t.reports)), db.select().from(t.grades).where(classFilter(t.grades)), db.select().from(t.conduct).where(classFilter(t.conduct)), db.select().from(t.funds).where(classFilter(t.funds)), db.select().from(t.fundCollections).where(classFilter(t.fundCollections)), db.select().from(t.activities).where(classFilter(t.activities)), db.select().from(t.duties).where(classFilter(t.duties)), db.select().from(t.notices).where(classFilter(t.notices)), db.select().from(t.feedback).where(classFilter(t.feedback)), teacher ? db.select().from(t.audit).where(classFilter(t.audit)) : Promise.resolve([])
+    const [groups, students, periods, entries, reports, grades, conduct, funds, collections, activities, duties, notices, feedback, audit, dutySwaps, badgeTypes, badgeAwards, monthlyProfiles] = await Promise.all([
+        db.select().from(t.groups).where(classFilter(t.groups)), db.select().from(t.students).where(classFilter(t.students)), db.select().from(t.periods).where(classFilter(t.periods)), db.select().from(t.entries).where(classFilter(t.entries)), db.select().from(t.reports).where(classFilter(t.reports)), db.select().from(t.grades).where(classFilter(t.grades)), db.select().from(t.conduct).where(classFilter(t.conduct)), db.select().from(t.funds).where(classFilter(t.funds)), db.select().from(t.fundCollections).where(classFilter(t.fundCollections)), db.select().from(t.activities).where(classFilter(t.activities)), db.select().from(t.duties).where(classFilter(t.duties)), db.select().from(t.notices).where(classFilter(t.notices)), db.select().from(t.feedback).where(classFilter(t.feedback)), teacher ? db.select().from(t.audit).where(classFilter(t.audit)) : Promise.resolve([]), db.select().from(t.dutySwaps).where(classFilter(t.dutySwaps)), db.select().from(t.badgeTypes).where(classFilter(t.badgeTypes)), db.select().from(t.badgeAwards).where(classFilter(t.badgeAwards)), db.select().from(t.monthlyProfiles).where(classFilter(t.monthlyProfiles))
     ]);
     const visibleStudent = (s: Row) => teacher || s.id === own?.id || canReport(roles, own?.groupId || '', s.groupId);
     const ids = new Set(students.filter(visibleStudent).map(s => s.id));
@@ -66,7 +67,8 @@ export async function state(classId?: string) {
     const ranks = Object.fromEntries(weekly.map(w => { const p = periods.find(p => p.week === w && p.status === 'locked'); return [w, p ? parse<Row>(p.snapshot, {}).standings : snapshot(groups, students, entries.filter(e => e.week === w), c.config).standings]; }));
     const historyScores = Object.fromEntries(periods.filter(p => p.status === 'locked').map(p => { const sn = parse<Row>(p.snapshot, {}); return [p.week, (sn.students || []).filter((s: Row) => ids.has(s.id)).map((s: Row) => ({ id: s.id, name: s.name, groupId: s.groupId, score: s.score }))]; }));
     const sheets=Object.fromEntries(weekly.map(w=>{const locked=periods.find(p=>p.week===w&&p.status==='locked');const snap=locked?parse<Row>(locked.snapshot,{}):null;const rules=(snap?.config||c.config).rules;const roster=(snap?.students||students).filter((s:Row)=>s.active);const records=(snap?.entries||entries.filter(e=>e.week===w));return [w,{rules,base:(snap?.config||c.config).base,rows:roster.map((s:Row)=>{const editable=teacher||canReport(roles,own?.groupId||'',s.groupId);const seen=records.filter((e:Row)=>e.studentId===s.id&&e.groupId===s.groupId&&(e.status==='approved'||(editable&&e.status==='pending')));return {id:s.id,name:s.name,groupId:s.groupId,previewScore:(snap?s.score:c.config.base+seen.reduce((n:number,e:Row)=>n+e.delta,0)),subjectCounts:Object.fromEntries(seen.filter((e:Row)=>e.subject&&rules.some((r:Row)=>r.id===e.ruleId&&needsLearningSubject(r))).map((e:Row)=>[e.ruleId+'|'+e.subject,seen.filter((x:Row)=>x.ruleId===e.ruleId&&x.subject===e.subject).reduce((n:number,x:Row)=>n+x.count,0)])),counts:Object.fromEntries(rules.map((r:Row)=>[r.id,r.kind==='speaking-total'?(seen.find((e:Row)=>e.ruleId===r.id)?.count??0):seen.filter((e:Row)=>e.ruleId===r.id).reduce((n:number,e:Row)=>n+e.count,0)])),recorded:Object.fromEntries(rules.filter((r:Row)=>r.kind==='speaking-total').map((r:Row)=>[r.id,seen.some((e:Row)=>e.ruleId===r.id)])),score:snap?s.score:c.config.base+records.filter((e:Row)=>e.studentId===s.id&&e.status==='approved').reduce((n:number,e:Row)=>n+e.delta,0)}})}]}));
-    common.detail = { ...c.cls, config: c.config, teacher, ownId: own?.id, roles, groups, students: students.map(s => teacher ? s : ({ ...s, email: s.id === own?.id ? s.email : '', roles: s.roles })), periods: periods.map(p => ({ ...p, snapshot: undefined })), entries: entries.filter(e => ids.has(e.studentId)), reports: reports.map(r => teacher || canReport(roles, own?.groupId || '', r.groupId) ? r : { ...r, note: '', createdBy: '' }), grades: grades.filter(g => (teacher || g.studentId === own?.id) && (g.confirmed || g.createdBy === user.email)), conduct: conduct.filter(x => teacher || x.studentId === own?.id), fundCollections: collections.map(c=>({ ...c,paid:funds.filter(f=>f.collectionId===c.id&&f.status==='approved').reduce((n,f)=>n+(f.type==='income'?f.amount:-f.amount),0),payments: (teacher||roles.includes('treasurer')?funds.filter(f=>f.collectionId===c.id&&f.status==='approved'):funds.filter(f=>f.collectionId===c.id&&f.status==='approved'&&f.studentId===own?.id)).map(f=>({studentId:f.studentId,amount:f.amount,type:f.type,date:f.date,id:f.id}))})), fundSummary: {income: funds.filter(f=>f.status==='approved'&&f.type==='income').reduce((n,f)=>n+f.amount,0),expense:funds.filter(f=>f.status==='approved'&&f.type==='expense').reduce((n,f)=>n+f.amount,0)}, funds: funds.filter(f => teacher || roles.includes('treasurer') || (f.status === 'approved' && (!f.studentId || f.studentId === own?.id))).map(f => teacher || roles.includes('treasurer') ? f : { ...f, proof: '', createdBy: '' }), activities, duties, notices, feedback: feedback.filter(f => teacher || f.createdBy === user.email), audit, ranks, historyScores, sheets };
+    const dailySheets=Object.fromEntries([...new Set([...entries.map(e=>e.reportDate),...reports.map(r=>r.reportDate)].filter(Boolean))].map(day=>{const w=monday(new Date(day));const sheet=sheets[w];if(!sheet)return [day,null];return [day,{...sheet,rows:sheet.rows.map((s:Row)=>{const records=entries.filter(e=>e.reportDate===day&&e.studentId===s.id&&e.groupId===s.groupId&&(e.status==='approved'||((teacher||canReport(roles,own?.groupId||'',s.groupId))&&e.status==='pending')));return {...s,counts:Object.fromEntries(sheet.rules.map((r:Row)=>[r.id,records.filter(e=>e.ruleId===r.id).reduce((n,e)=>n+e.count,0)])),recorded:Object.fromEntries(sheet.rules.filter((r:Row)=>r.kind==='speaking-total').map((r:Row)=>[r.id,records.some(e=>e.ruleId===r.id)])),subjectCounts:Object.fromEntries(records.filter(e=>e.subject).map(e=>[e.ruleId+'|'+e.subject,records.filter(x=>x.ruleId===e.ruleId&&x.subject===e.subject).reduce((n,x)=>n+x.count,0)]))}})}]}));
+    common.detail = { ...c.cls, config: c.config, teacher, ownId: own?.id, roles, groups, students: students.map(s => teacher ? s : ({ ...s, email: s.id === own?.id ? s.email : '', roles: s.roles })), periods: periods.map(p => ({ ...p, snapshot: undefined })), entries: entries.filter(e => ids.has(e.studentId)), reports: reports.map(r => teacher || canReport(roles, own?.groupId || '', r.groupId) ? r : { ...r, note: '', createdBy: '' }), grades: grades.filter(g => teacher || g.studentId === own?.id), conduct: conduct.filter(x => teacher || x.studentId === own?.id), fundCollections: collections.map(c=>({ ...c,paid:funds.filter(f=>f.collectionId===c.id&&f.status==='approved').reduce((n,f)=>n+(f.type==='income'?f.amount:-f.amount),0),payments: (teacher||roles.includes('treasurer')?funds.filter(f=>f.collectionId===c.id&&f.status==='approved'):funds.filter(f=>f.collectionId===c.id&&f.status==='approved'&&f.studentId===own?.id)).map(f=>({studentId:f.studentId,amount:f.amount,type:f.type,date:f.date,id:f.id}))})), fundSummary: {income: funds.filter(f=>f.status==='approved'&&f.type==='income').reduce((n,f)=>n+f.amount,0),expense:funds.filter(f=>f.status==='approved'&&f.type==='expense').reduce((n,f)=>n+f.amount,0)}, funds: funds.filter(f => teacher || roles.includes('treasurer') || (f.status === 'approved' && (!f.studentId || f.studentId === own?.id))).map(f => teacher || roles.includes('treasurer') ? f : { ...f, proof: '', createdBy: '' }), activities, duties, notices, feedback: feedback.filter(f => teacher || f.createdBy === user.email), audit, ranks, historyScores, sheets, dailySheets, serverToday:vietnamToday(), speakingAvailable:speakingAllowed(c.config,vietnamToday()),speakingAvailableDates:[...new Set([...(c.config.speakingOpenDates||[]).filter(d=>d<=vietnamToday()),...(new Date(vietnamToday()+'T00:00:00Z').getUTCDay()===5?[vietnamToday()]:[])])], dutySwaps:dutySwaps.filter(x=>teacher||roles.some(r=>['leader','discipline'].includes(r))||x.fromStudentId===own?.id||x.toStudentId===own?.id),badgeTypes,badgeAwards:badgeAwards.filter(x=>teacher||x.studentId===own?.id),monthlyProfiles:monthlyProfiles.filter(x=>teacher||(x.studentId===own?.id&&x.status==='approved')) };
     return common;
 }
 export async function action(b: Row) {
@@ -125,6 +127,9 @@ export async function action(b: Row) {
         fail(403, 'Bạn chỉ được báo cáo trong phạm vi được phân công'); };
     const openWeek = async (w: string) => { const p = await db.select().from(t.periods).where(and(eq(t.periods.classId, classId), eq(t.periods.week, w))).get(); if (p?.status === 'locked')
         fail(409, 'Tuần đã chốt. Dữ liệu không thể chỉnh sửa'); };
+    const getDay=(w:string)=>{try{return getReportDate(config,w,b.reportDate)}catch(e){return fail(400,(e as Error).message)}};
+    const reportFilter=(w:string,g:string,day:string)=>and(eq(t.reports.classId,classId),eq(t.reports.week,w),eq(t.reports.groupId,g),eq(t.reports.reportDate,day));
+    const assertSpeaking=(day:string)=>{if(!speakingAllowed(config,day))fail(403,'Phát biểu chỉ được báo trong ngày thứ Sáu hoặc ngày giáo viên mở, theo giờ Việt Nam.');};
     const commands: any[] = [];
     const add = (query: any) => commands.push(query);
     const allStudents = () => db.select().from(t.students).where(eq(t.students.classId, classId));
@@ -238,28 +243,30 @@ export async function action(b: Row) {
             }break;
         }
         case 'saveAcademicSheet': {
-            const w=week(b.week);await openWeek(w);const groupId=str(b.groupId,100);reportPermission(groupId);
+            const w=week(b.week);await openWeek(w);const reportDate=getDay(w);const groupId=str(b.groupId,100);reportPermission(groupId);
             if(!(await allGroups()).some(g=>g.id===groupId))fail(403,'Tổ không thuộc lớp.');
             const subject=cleanSubject(b.subject);if(!subject)fail(400,'Chọn môn trước khi nhập bảng điểm.');const attempt=amount(b.attempt,1,5),prefix=academicPrefix(attempt);
-            const report=await db.select().from(t.reports).where(and(eq(t.reports.classId,classId),eq(t.reports.week,w),eq(t.reports.groupId,groupId))).get();if(report&&report.status!=='returned')fail(409,'Báo cáo đã gửi. Cần trả lại trước khi sửa bảng.');
+            const report=await db.select().from(t.reports).where(reportFilter(w,groupId,reportDate)).get();if(report&&report.status!=='returned')fail(409,'Báo cáo đã gửi. Cần trả lại trước khi sửa bảng.');
             if(!Array.isArray(b.cells)||!b.cells.length||b.cells.length>40)fail(400,'Mỗi lượt lưu tối đa 40 học sinh.');
             const members=await allStudents(),seen=new Set<string>(),changes:Row[]=[];
             for(const cell of b.cells){const member=members.find(s=>s.id===cell.studentId&&s.groupId===groupId&&s.active);if(!member)fail(403,'Chỉ được nhập học sinh thuộc tổ được giao.');if(seen.has(member.id))fail(400,'Học sinh bị lặp trong bảng.');seen.add(member.id);let grade:number|null=null,rule;try{grade=academicGrade(cell.grade);rule=grade===null?undefined:academicBand(config,grade)}catch(e){fail(400,(e as Error).message)}if(cell.note!==undefined&&(typeof cell.note!=='string'||cell.note.length>500))fail(400,'Ghi chú tối đa 500 ký tự.');changes.push({member,grade,rule,note:String(cell.note||'').trim()})}
             const old=await db.select().from(t.entries).where(and(eq(t.entries.classId,classId),eq(t.entries.week,w),eq(t.entries.groupId,groupId),eq(t.entries.subject,subject)));
-            for(const change of changes){const prior=old.filter(e=>e.studentId===change.member.id&&e.ruleId.startsWith(prefix)&&e.status!=='rejected');for(const e of prior)add(db.update(t.entries).set({status:'rejected',reviewNote:'Thay thế bởi bảng điểm theo môn'}).where(eq(t.entries.id,e.id)))}
-            const values=changes.filter(c=>c.grade!==null).map(c=>({id:uid(),classId,week:w,studentId:c.member.id,groupId,ruleId:prefix+'band-'+c.rule.min,ruleName:(c.rule.kind==='learned'?'Thuộc bài':'Không thuộc bài')+' · mốc từ '+c.rule.min+' điểm',category:'learning',delta:c.rule.points,count:1,status:'pending',note:c.note,proof:'',grade:String(c.grade),subject,createdBy:user.email,createdAt:now(),reviewNote:''}));for(let i=0;i<values.length;i+=4)add(db.insert(t.entries).values(values.slice(i,i+4)));break;
+            for(const change of changes){const prior=old.filter(e=>e.studentId===change.member.id&&e.ruleId.startsWith(prefix)&&e.reportDate===reportDate&&e.status!=='rejected');for(const e of prior)add(db.update(t.entries).set({status:'rejected',reviewNote:'Thay thế bởi bảng điểm theo môn'}).where(eq(t.entries.id,e.id)))}
+            const values=changes.filter(c=>c.grade!==null).map(c=>({id:uid(),classId,week:w,reportDate,studentId:c.member.id,groupId,ruleId:prefix+'band-'+c.rule.min,ruleName:(c.rule.kind==='learned'?'Thuộc bài':'Không thuộc bài')+' · mốc từ '+c.rule.min+' điểm',category:'learning',delta:c.rule.points,count:1,status:'pending',note:c.note,proof:'',grade:String(c.grade),subject,createdBy:user.email,createdAt:now(),reviewNote:''}));for(let i=0;i<values.length;i+=4)add(db.insert(t.entries).values(values.slice(i,i+4)));break;
         }
         case 'saveSheet': {
-            const w=week(b.week);await openWeek(w);const groupId=str(b.groupId,100);reportPermission(groupId);
-            const rep=await db.select().from(t.reports).where(and(eq(t.reports.classId,classId),eq(t.reports.week,w),eq(t.reports.groupId,groupId))).get();
+            const w=week(b.week);await openWeek(w);const reportDate=getDay(w);const groupId=str(b.groupId,100);reportPermission(groupId);
+            const rep=await db.select().from(t.reports).where(reportFilter(w,groupId,reportDate)).get();
             if(rep&&rep.status!=='returned')fail(409,'Báo cáo đã gửi. Giáo viên cần trả lại trước khi sửa bảng.');
             if(!Array.isArray(b.cells)||!b.cells.length||b.cells.length>80)fail(400,'Mỗi lần lưu tối đa 80 ô đã thay đổi.');
             const members=await allStudents();const old=await db.select().from(t.entries).where(and(eq(t.entries.classId,classId),eq(t.entries.week,w),eq(t.entries.groupId,groupId)));
             const changes:Row[]=[];const keys=new Set();
-            for(const cell of b.cells){const member=members.find(x=>x.id===cell.studentId&&x.groupId===groupId&&x.active);if(!member)fail(403,'Chỉ được nhập học sinh trong tổ được giao');const rule=config.rules.find(x=>x.id===cell.ruleId);if(!rule)fail(400,'Quy tắc đã thay đổi. Hãy tải lại bảng.');const count=cell.count===null&&rule.kind==='speaking-total'?null:amount(cell.count,0,100);if(rule.limit&&count!==null&&count>rule.limit)fail(400,'Vượt giới hạn quy tắc: '+rule.name);const subject=needsLearningSubject(rule)?cleanSubject(cell.subject):'';if(needsLearningSubject(rule)&&!subject)fail(400,'Chọn môn học trước khi ghi điểm thuộc bài / không thuộc bài.');const key=member.id+':'+rule.id+':'+subject;if(keys.has(key))fail(400,'Ô bị lặp');keys.add(key);changes.push({member,rule,count,subject});}
+            for(const cell of b.cells){const member=members.find(x=>x.id===cell.studentId&&x.groupId===groupId&&x.active);if(!member)fail(403,'Chỉ được nhập học sinh trong tổ được giao');const rule=config.rules.find(x=>x.id===cell.ruleId);if(!rule)fail(400,'Quy tắc đã thay đổi. Hãy tải lại bảng.');if(rule.category==='speaking')assertSpeaking(reportDate);const count=cell.count===null&&rule.kind==='speaking-total'?null:amount(cell.count,0,100);if(rule.limit&&count!==null&&count>rule.limit)fail(400,'Vượt giới hạn quy tắc: '+rule.name);const subject=needsLearningSubject(rule)?cleanSubject(cell.subject):'';if(needsLearningSubject(rule)&&!subject)fail(400,'Chọn môn học trước khi ghi điểm thuộc bài / không thuộc bài.');const key=member.id+':'+rule.id+':'+subject;if(keys.has(key))fail(400,'Ô bị lặp');keys.add(key);changes.push({member,rule,count,subject});}
+            for(const change of changes.filter(x=>x.rule.limit)){const total=old.filter(e=>e.studentId===change.member.id&&e.ruleId===change.rule.id&&e.status!=='rejected'&&!changes.some(x=>e.reportDate===reportDate&&x.member.id===e.studentId&&x.rule.id===e.ruleId&&(!needsLearningSubject(x.rule)||x.subject===e.subject))).reduce((n,e)=>n+e.count,0)+changes.filter(x=>x.member.id===change.member.id&&x.rule.id===change.rule.id).reduce((n,x)=>n+(x.count||0),0);if(total>change.rule.limit)fail(400,'Vượt giới hạn quy tắc trong tuần: '+change.rule.name);}
+            for(const change of changes.filter(x=>x.rule.category==='speaking')){if(old.some(e=>e.studentId===change.member.id&&e.category==='speaking'&&e.reportDate!==reportDate&&e.status!=='rejected'))fail(409,'Phát biểu tuần này đã được ghi vào ngày khác. Trả lại và sửa đúng ngày báo cáo cũ.');}
             for(const member of members.filter(x=>x.groupId===groupId)){const speaking=config.rules.filter(r=>r.category==='speaking').filter(r=>{const change=changes.find(x=>x.member.id===member.id&&x.rule.id===r.id);return change?(r.kind==='speaking-total'?change.count!==null:change.count>0):old.some(e=>e.studentId===member.id&&e.ruleId===r.id&&e.status!=='rejected')});if(speaking.length>1)fail(400,'Mỗi học sinh chỉ áp dụng một mốc phát biểu/tuần.');}
-            for(let i=0;i<changes.length;i+=20){const chunk=changes.slice(i,i+20);add(db.update(t.entries).set({status:'rejected',reviewNote:'Thay thế bởi bảng nhập thi đua'}).where(and(eq(t.entries.classId,classId),eq(t.entries.week,w),eq(t.entries.groupId,groupId),or(...chunk.map(x=>and(eq(t.entries.studentId,x.member.id),eq(t.entries.ruleId,x.rule.id),...(needsLearningSubject(x.rule)?[eq(t.entries.subject,x.subject)]:[])))))))}
-            const values=changes.filter(x=>x.rule.kind==='speaking-total'?x.count!==null:x.count>0).map(x=>({id:uid(),classId,week:w,studentId:x.member.id,groupId,ruleId:x.rule.id,ruleName:x.rule.name,category:x.rule.category,delta:ruleScore(x.rule,x.count),count:x.count,status:'pending',note:x.rule.kind==='speaking-total'&&x.count<x.rule.kpi.minRequired?'Không đủ KPI phát biểu':'Nhập qua bảng thi đua tổ',proof:'',grade:['grade8','grade9','grade10'].includes(x.rule.id)?x.rule.id.slice(5):'',subject:x.subject||'',createdBy:user.email,createdAt:now(),reviewNote:''}));
+            for(let i=0;i<changes.length;i+=20){const chunk=changes.slice(i,i+20);add(db.update(t.entries).set({status:'rejected',reviewNote:'Thay thế bởi bảng nhập thi đua'}).where(and(eq(t.entries.classId,classId),eq(t.entries.week,w),eq(t.entries.groupId,groupId),eq(t.entries.reportDate,reportDate),or(...chunk.map(x=>and(eq(t.entries.studentId,x.member.id),eq(t.entries.ruleId,x.rule.id),...(needsLearningSubject(x.rule)?[eq(t.entries.subject,x.subject)]:[])))))))}
+            const values=changes.filter(x=>x.rule.kind==='speaking-total'?x.count!==null:x.count>0).map(x=>({id:uid(),classId,week:w,reportDate,studentId:x.member.id,groupId,ruleId:x.rule.id,ruleName:x.rule.name,category:x.rule.category,delta:ruleScore(x.rule,x.count),count:x.count,status:'pending',note:x.rule.kind==='speaking-total'&&x.count<x.rule.kpi.minRequired?'Không đủ KPI phát biểu':'Nhập qua bảng thi đua tổ',proof:'',grade:['grade8','grade9','grade10'].includes(x.rule.id)?x.rule.id.slice(5):'',subject:x.subject||'',createdBy:user.email,createdAt:now(),reviewNote:''}));
             for(let i=0;i<values.length;i+=4)add(db.insert(t.entries).values(values.slice(i,i+4)));
             break;
         }
@@ -268,13 +275,15 @@ export async function action(b: Row) {
             reportPermission(s.groupId);
             const w = week(b.week);
             await openWeek(w);
+            const reportDate=getDay(w);
             const r = config.rules.find(r => r.id === b.ruleId);
             if (!r)
                 fail(400, 'Không tìm thấy quy tắc');
+            if(r.category==='speaking')assertSpeaking(reportDate);
             const count = r.kind === 'speaking-total' ? amount(b.count,0,100) : amount(b.count || 1, 1, 100);
             const subject=needsLearningSubject(r)?cleanSubject(b.subject):'';
             if(needsLearningSubject(r)&&!subject)fail(400,'Phải chọn môn học khi ghi nhận điểm học tập.');
-            const rep = await db.select().from(t.reports).where(and(eq(t.reports.classId, classId), eq(t.reports.week, w), eq(t.reports.groupId, s.groupId))).get();
+            const rep = await db.select().from(t.reports).where(reportFilter(w,s.groupId,reportDate)).get();
             if (rep && rep.status !== 'returned')
                 fail(409, 'Báo cáo tổ đã gửi; giáo viên cần trả lại trước khi bổ sung');
             const old = await db.select().from(t.entries).where(and(eq(t.entries.classId, classId), eq(t.entries.week, w), eq(t.entries.studentId, s.id)));
@@ -291,19 +300,20 @@ export async function action(b: Row) {
                 fail(400, 'Điểm kiểm tra phải khớp quy tắc đã chọn');
             if (grade && (!Number.isFinite(Number(grade)) || Number(grade) < 0 || Number(grade) > 10))
                 fail(400, 'Điểm phải từ 0 đến 10');
-            add(db.insert(t.entries).values({ id: uid(), classId, week: w, studentId: s.id, groupId: s.groupId, ruleId: r.id, ruleName: r.name, category: r.category, delta: ruleScore(r,count), count, status: 'pending', note: r.kind==='speaking-total'&&count<r.kpi!.minRequired?'Không đủ KPI phát biểu':String(b.note || '').slice(0, 2000), proof: safeUrl(b.proof), grade, subject, createdBy: user.email, createdAt: now() }));
+            add(db.insert(t.entries).values({ id: uid(), classId, week: w, reportDate, studentId: s.id, groupId: s.groupId, ruleId: r.id, ruleName: r.name, category: r.category, delta: ruleScore(r,count), count, status: 'pending', note: r.kind==='speaking-total'&&count<r.kpi!.minRequired?'Không đủ KPI phát biểu':String(b.note || '').slice(0, 2000), proof: safeUrl(b.proof), grade, subject, createdBy: user.email, createdAt: now() }));
             break;
         }
         case 'submitReport': {
             const w = week(b.week);
+            const reportDate=getDay(w);
             await openWeek(w);
             reportPermission(str(b.groupId, 100));
             if (!(await allGroups()).some(g => g.id === b.groupId))
                 fail(400, 'Tổ không thuộc lớp');
-            const rep = await db.select().from(t.reports).where(and(eq(t.reports.classId, classId), eq(t.reports.week, w), eq(t.reports.groupId, b.groupId))).get();
+            const rep = await db.select().from(t.reports).where(reportFilter(w,b.groupId,reportDate)).get();
             if (rep && rep.status !== 'returned')
                 fail(409, 'Báo cáo đã gửi');
-            add(db.insert(t.reports).values({ id: uid(), classId, week: w, groupId: b.groupId, status: 'submitted', note: String(b.note || '').slice(0, 2000), createdBy: user.email }).onConflictDoUpdate({ target: [t.reports.classId, t.reports.week, t.reports.groupId], set: { status: 'submitted', note: String(b.note || '').slice(0, 2000), createdBy: user.email } }));
+            add(db.insert(t.reports).values({ id: uid(), classId, week: w, reportDate, groupId: b.groupId, status: 'submitted', note: String(b.note || '').slice(0, 2000), createdBy: user.email }).onConflictDoUpdate({ target: [t.reports.classId, t.reports.week, t.reports.groupId,t.reports.reportDate], set: { status: 'submitted', note: String(b.note || '').slice(0, 2000), createdBy: user.email } }));
             break;
         }
         case 'reviewReport': {
@@ -317,7 +327,7 @@ export async function action(b: Row) {
                 fail(400, 'Trạng thái không hợp lệ');
             const note = b.status === 'returned' ? str(b.note, 2000) : String(b.note || '').slice(0, 2000);
             add(db.update(t.reports).set({ status: b.status, note }).where(eq(t.reports.id, rep.id)));
-            add(db.update(t.entries).set({ status: b.status === 'approved' ? 'approved' : 'pending', reviewNote: note }).where(and(eq(t.entries.classId, classId), eq(t.entries.week, rep.week), eq(t.entries.groupId, rep.groupId), sql `${t.entries.status} != 'rejected'`)));
+            add(db.update(t.entries).set({ status: b.status === 'approved' ? 'approved' : 'pending', reviewNote: note }).where(and(eq(t.entries.classId, classId), eq(t.entries.week, rep.week), eq(t.entries.groupId, rep.groupId),eq(t.entries.reportDate,rep.reportDate),sql`${t.entries.ruleId} NOT LIKE 'badge/%'`, sql `${t.entries.status} != 'rejected'`)));
             break;
         }
         case 'rejectEntry': {
@@ -326,6 +336,7 @@ export async function action(b: Row) {
             if (!e)
                 fail(404, 'Không có ghi nhận');
             await openWeek(e.week);
+            if(e.ruleId.startsWith('badge/'))fail(400,'Hãy thu hồi huy hiệu trong Hồ sơ & huy hiệu để cập nhật đồng bộ.');
             add(db.update(t.entries).set({ status: 'rejected', reviewNote: str(b.note, 2000) }).where(eq(t.entries.id, e.id)));
             break;
         }
@@ -338,8 +349,10 @@ export async function action(b: Row) {
             if (!sts.some(s => s.active))
                 fail(400, 'Lớp chưa có học sinh');
             const rs = await db.select().from(t.reports).where(and(eq(t.reports.classId, classId), eq(t.reports.week, w)));
-            if (gs.some(g => sts.some(s => s.groupId === g.id && s.active) && !rs.some(r => r.groupId === g.id && r.status === 'approved')))
-                fail(400, 'Cần duyệt báo cáo của tất cả tổ có học sinh trước khi chốt');
+            const dates=requiredReportDates(config,w);
+            if(config.reportMode==='daily'&&dates.some(d=>d>vietnamToday()))fail(400,'Chưa đến ngày báo cáo cuối tuần; chưa thể chốt.');
+            if(gs.some(g=>sts.some(s=>s.groupId===g.id&&s.active)&&!(rs.some(r=>r.groupId===g.id&&!r.reportDate&&r.status==='approved')&&!rs.some(r=>r.groupId===g.id&&r.reportDate))&&dates.some(day=>!rs.some(r=>r.groupId===g.id&&r.reportDate===day&&r.status==='approved'))))fail(400,'Cần duyệt đủ báo cáo từng ngày đã chọn của tất cả tổ trước khi chốt.');
+            if(rs.some(r=>r.status!=='approved'))fail(400,'Còn báo cáo chưa duyệt.');
             const es = await db.select().from(t.entries).where(and(eq(t.entries.classId, classId), eq(t.entries.week, w)));
             if (es.some(e => e.status === 'pending'))
                 fail(400, 'Vẫn còn ghi nhận chưa được duyệt');
@@ -355,9 +368,15 @@ export async function action(b: Row) {
             if (!teacher && s.id !== own?.id)
                 fail(403, 'Chỉ được tự ghi điểm của mình');
             const v = Number(b.value);
+            const kind=b.kind||'regular',term=b.term||'1';if(!['regular','oral','midterm','final','bonus'].includes(kind)||!['1','2'].includes(term))fail(400,'Loại điểm hoặc học kì không hợp lệ.');
+            const weight=amount(b.weight??(kind==='midterm'?2:kind==='final'?3:1),1,3),bonus=Number(b.bonus??0);if(!Number.isFinite(bonus)||bonus<0||bonus>10)fail(400,'Điểm cộng từ 0 đến 10.');
+            const inAverage=kind==='bonus'?0:b.inAverage===false?0:1;
+            let previous;if(b.id){previous=await db.select().from(t.grades).where(and(eq(t.grades.id,str(b.id,100)),eq(t.grades.classId,classId))).get();if(!previous)fail(404,'Không có điểm này.');if(!teacher&&(previous.createdBy!==user.email||previous.confirmed||previous.studentId!==s.id))fail(403,'Chỉ sửa điểm tự ghi của mình.');}
+
             if (!Number.isFinite(v) || v < 0 || v > 10)
                 fail(400, 'Điểm phải từ 0 đến 10');
-            add(db.insert(t.grades).values({ id: uid(), classId, studentId: s.id, subject: str(b.subject, 100), value: String(v), date: date(b.date), note: String(b.note || '').slice(0, 1000), createdBy: user.email, confirmed: teacher ? 1 : 0 }));
+            const value={classId,studentId:s.id,subject:str(b.subject,100),value:String(v),kind,term,weight,bonus:String(bonus),inAverage,date:date(b.date),note:String(b.note||'').slice(0,1000),createdBy:previous?.createdBy||user.email,confirmed:teacher?1:0};
+            if(previous)add(db.update(t.grades).set(value).where(eq(t.grades.id,previous.id)));else add(db.insert(t.grades).values({id:uid(),...value}));
             break;
         }
         case 'deleteGrade': {
@@ -511,7 +530,6 @@ export async function action(b: Row) {
         case 'addDuty': {
             needTeacher();
             const s = await student(b.studentId);
-            if(parse<string[]>(s.roles,[]).length)fail(400,'Không xếp ban cán sự trực tự động hoặc thủ công.');
             const when=date(b.date);
             const occupied=await db.select().from(t.duties).where(and(eq(t.duties.classId,classId),eq(t.duties.studentId,s.id),eq(t.duties.date,when))).get();
             if(occupied)fail(409,'Học sinh đã có nhiệm vụ trong ngày này.');
@@ -531,6 +549,86 @@ export async function action(b: Row) {
                 fail(400, 'Trạng thái không hợp lệ');
             add(db.update(t.duties).set({ status: b.status }).where(eq(t.duties.id, d.id)));
             break;
+        }
+        case 'requestDutySwap': {
+            if(!own)fail(403,'Chỉ học sinh có lịch trực được đề nghị đổi.');
+            const from=await db.select().from(t.duties).where(and(eq(t.duties.id,b.fromDutyId),eq(t.duties.classId,classId))).get();
+            const to=await db.select().from(t.duties).where(and(eq(t.duties.id,b.toDutyId),eq(t.duties.classId,classId))).get();
+            if(!from||!to||from.studentId!==own.id||from.studentId===to.studentId||from.id===to.id)fail(400,'Chọn lịch của mình và lịch của một bạn khác trong lớp.');
+            await student(to.studentId);
+            if([from,to].some(d=>d.status!=='assigned'||d.date<vietnamToday()))fail(409,'Chỉ đổi lịch chưa làm và chưa qua ngày trực.');
+            const pending=await db.select().from(t.dutySwaps).where(eq(t.dutySwaps.classId,classId));
+            if(pending.some(x=>['requested','accepted'].includes(x.status)&&[x.fromDutyId,x.toDutyId].some(id=>[from.id,to.id].includes(id))))fail(409,'Một lịch đang có đề nghị đổi chưa xử lý.');
+            add(db.insert(t.dutySwaps).values({id:uid(),classId,fromDutyId:from.id,toDutyId:to.id,fromStudentId:from.studentId,toStudentId:to.studentId,reason:str(b.reason,1000),createdAt:now(),updatedAt:now()}));break;
+        }
+        case 'respondDutySwap':
+        case 'reviewDutySwap': {
+            const swap=await db.select().from(t.dutySwaps).where(and(eq(t.dutySwaps.id,b.id),eq(t.dutySwaps.classId,classId))).get();
+            if(!swap)fail(404,'Không có đề nghị đổi trực.');
+            let status:string;
+            if(actionName==='respondDutySwap'){
+                if(swap.status!=='requested')fail(409,'Đề nghị đã được xử lý.');
+                if(own?.id!==swap.toStudentId)fail(403,'Chỉ bạn được đề nghị mới có thể đồng ý / từ chối.');
+                if(!['accepted','rejected'].includes(b.status))fail(400,'Trạng thái không hợp lệ.');status=b.status;
+            }else{
+                if(!teacher&&!roles.some(r=>['leader','discipline'].includes(r)))fail(403,'Chỉ giáo viên, lớp trưởng hoặc lớp phó nề nếp được duyệt đổi trực.');
+                if(swap.status!=='accepted')fail(409,'Cần bạn nhận đổi đồng ý trước.');
+                if(!['approved','rejected'].includes(b.status))fail(400,'Trạng thái không hợp lệ.');status=b.status;
+            }
+            if(status==='approved'||status==='accepted'){
+                const ds=await db.select().from(t.duties).where(and(eq(t.duties.classId,classId),inArray(t.duties.id,[swap.fromDutyId,swap.toDutyId])));
+                const from=ds.find(d=>d.id===swap.fromDutyId),to=ds.find(d=>d.id===swap.toDutyId);
+                if(!from||!to||from.studentId!==swap.fromStudentId||to.studentId!==swap.toStudentId||[from,to].some(d=>d.status!=='assigned'||d.date<vietnamToday()))fail(409,'Lịch trực đã thay đổi hoặc quá hạn. Hãy từ chối đề nghị cũ.');
+                const sameDay=await db.select().from(t.duties).where(and(eq(t.duties.classId,classId),or(and(eq(t.duties.studentId,swap.toStudentId),eq(t.duties.date,from.date)),and(eq(t.duties.studentId,swap.fromStudentId),eq(t.duties.date,to.date)))));
+                if(sameDay.some(d=>d.id!==from.id&&d.id!==to.id))fail(409,'Đổi lịch sẽ khiến một bạn nhận hai nhiệm vụ cùng ngày.');
+                await student(swap.fromStudentId);await student(swap.toStudentId);
+                if(status==='approved'){
+                    add(db.update(t.duties).set({studentId:swap.toStudentId}).where(eq(t.duties.id,swap.fromDutyId)));
+                    add(db.update(t.duties).set({studentId:swap.fromStudentId}).where(eq(t.duties.id,swap.toDutyId)));
+                }
+            }
+            add(db.update(t.dutySwaps).set({status,reviewNote:String(b.note||'').slice(0,1000),updatedAt:now()}).where(eq(t.dutySwaps.id,swap.id)));break;
+        }
+        case 'addPrivateMessage': {
+            if(!own)fail(403,'Hộp thư này dành cho học sinh gửi giáo viên.');
+            add(db.insert(t.feedback).values({id:uid(),classId,studentId:own.id,kind:'private',message:str(b.message,2000),createdBy:user.email,createdAt:now()}));break;
+        }
+        case 'saveBadgeType': {
+            needTeacher();const id=b.id?str(b.id,100):uid();
+            if(!['star','heart','sparkles','trophy','leaf'].includes(b.icon))fail(400,'Biểu tượng không hợp lệ.');
+            const old=await db.select().from(t.badgeTypes).where(eq(t.badgeTypes.id,id)).get();
+            if(old&&old.classId!==classId)fail(403,'Huy hiệu không thuộc lớp.');
+            const value={id,classId,name:str(b.name,100),description:str(b.description,500),icon:b.icon,points:amount(b.points,0,1000),active:b.active===false?0:1};
+            add(db.insert(t.badgeTypes).values(value).onConflictDoUpdate({target:t.badgeTypes.id,set:value}));break;
+        }
+        case 'awardBadge': {
+            needTeacher();const member=await student(b.studentId);const badge=await db.select().from(t.badgeTypes).where(and(eq(t.badgeTypes.id,b.badgeId),eq(t.badgeTypes.classId,classId))).get();
+            if(!badge?.active)fail(400,'Huy hiệu đã ngừng sử dụng.');
+            const d=date(b.date);if(d>vietnamToday())fail(400,'Không trao huy hiệu cho ngày tương lai.');const w=monday(new Date(d));await openWeek(w);const month=d.slice(0,7);
+            const existing=await db.select().from(t.badgeAwards).where(and(eq(t.badgeAwards.classId,classId),eq(t.badgeAwards.studentId,member.id),eq(t.badgeAwards.badgeId,badge.id),eq(t.badgeAwards.month,month))).get();
+            if(existing)fail(409,'Học sinh đã có huy hiệu này trong tháng (kể cả huy hiệu đã thu hồi).');
+            const id=uid(),reason=str(b.reason,1000);
+            add(db.insert(t.badgeAwards).values({id,classId,studentId:member.id,badgeId:badge.id,month,date:d,name:badge.name,icon:badge.icon,points:badge.points,reason,createdBy:user.email,createdAt:now()}));
+            if(badge.points)add(db.insert(t.entries).values({id:uid(),classId,studentId:member.id,groupId:member.groupId,week:w,reportDate:config.reportMode==='daily'?d:'',ruleId:'badge/'+id,ruleName:'Huy hiệu: '+badge.name,category:'movement',delta:badge.points,count:1,status:'approved',note:reason,createdBy:user.email,createdAt:now()}));break;
+        }
+        case 'revokeBadge': {
+            needTeacher();const award=await db.select().from(t.badgeAwards).where(and(eq(t.badgeAwards.id,b.id),eq(t.badgeAwards.classId,classId))).get();
+            if(!award||award.status!=='active')fail(409,'Huy hiệu không tồn tại hoặc đã thu hồi.');await openWeek(monday(new Date(award.date)));
+            const reason=str(b.reason,1000);add(db.update(t.badgeAwards).set({status:'revoked'}).where(eq(t.badgeAwards.id,award.id)));
+            add(db.update(t.entries).set({status:'rejected',reviewNote:'Thu hồi huy hiệu: '+reason}).where(and(eq(t.entries.classId,classId),eq(t.entries.ruleId,'badge/'+award.id))));break;
+        }
+        case 'saveMonthlyProfile': {
+            needTeacher();const member=await student(b.studentId),month=str(b.month,7);if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)||month>vietnamToday().slice(0,7))fail(400,'Tháng không hợp lệ.');
+            const old=await db.select().from(t.monthlyProfiles).where(and(eq(t.monthlyProfiles.classId,classId),eq(t.monthlyProfiles.studentId,member.id),eq(t.monthlyProfiles.month,month))).get();
+            if(old?.status==='approved')fail(409,'Hồ sơ đã duyệt được giữ nguyên.');
+            const [es,gs,cs,awards]=await Promise.all([db.select().from(t.entries).where(eq(t.entries.classId,classId)),db.select().from(t.grades).where(eq(t.grades.classId,classId)),db.select().from(t.conduct).where(eq(t.conduct.classId,classId)),db.select().from(t.badgeAwards).where(eq(t.badgeAwards.classId,classId))]);
+            const value={id:old?.id||uid(),classId,studentId:member.id,month,snapshot:JSON.stringify(monthlyProfile(member,month,es,gs,cs,awards)),comment:String(b.comment||'').slice(0,2000),status:'draft',createdBy:user.email,updatedAt:now()};
+            add(db.insert(t.monthlyProfiles).values(value).onConflictDoUpdate({target:[t.monthlyProfiles.classId,t.monthlyProfiles.studentId,t.monthlyProfiles.month],set:value}));break;
+        }
+        case 'approveMonthlyProfile': {
+            needTeacher();const profile=await db.select().from(t.monthlyProfiles).where(and(eq(t.monthlyProfiles.id,b.id),eq(t.monthlyProfiles.classId,classId))).get();
+            if(!profile||profile.status!=='draft')fail(409,'Chỉ được duyệt hồ sơ nháp.');
+            const sn=parse<Row>(profile.snapshot,{});add(db.update(t.monthlyProfiles).set({status:'approved',updatedAt:now(),snapshot:JSON.stringify({...sn,approvedBy:user.name,approvedAt:now()})}).where(eq(t.monthlyProfiles.id,profile.id)));break;
         }
         case 'addNotice': {
             if (!teacher && !roles.includes('leader'))

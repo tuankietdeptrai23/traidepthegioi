@@ -1,22 +1,7 @@
-# traidepthegioi
+# Lớp Học Hay
 
-## Lớp Học Hay
+Mã nguồn ứng dụng chính nằm trong `lop-hoc-hay/`. Chạy build, kiểm thử và migration từ thư mục này. Các bản sao ở thư mục gốc được giữ để tra cứu lịch sử; không dùng làm ứng dụng triển khai.
 
-Ứng dụng quản lí lớp học tiếng Việt. Mã nguồn nằm trong [`lop-hoc-hay/`](./lop-hoc-hay/).
+Website hiện tại: https://quanlilophoc.dainvietlach.chatgpt.site
 
-- [Hướng dẫn cài đặt, tính năng và giới hạn](./lop-hoc-hay/README.md)
-- [Kiến trúc](./lop-hoc-hay/ARCHITECTURE.md)
-- [Bảo mật](./lop-hoc-hay/SECURITY.md)
-- [Mở website](https://quanlilophoc.dainvietlach.chatgpt.site/)
-
-```bash
-cd lop-hoc-hay
-pnpm install --frozen-lockfile
-pnpm build
-pnpm db:migrate:local
-pnpm dev
-```
-
-Yêu cầu Node.js 24.22+ và pnpm 11.25+. Đăng nhập bằng ID và mật khẩu. Giáo viên/admin nhập danh sách để tự cấp ID không dấu và mật khẩu học sinh ban đầu 12345678; học sinh có thể tự đổi. Phiên đăng nhập được nhớ 90 ngày. Dữ liệu D1 không nằm trong kho mã.
-
-Bản nguồn đã qua kiểm tra TypeScript, build production và 44 kiểm tra tích hợp. GitHub Actions sẽ kiểm tra lại mỗi lần push hoặc mở pull request.
+Migration quỹ trong PR #4 được nối vào lịch sử Sites đã triển khai dưới tên `0007_fund_collections.sql`; không chạy lại bản `0005_fund_collections.sql`. Xem README trong thư mục ứng dụng.
