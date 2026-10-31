@@ -10,7 +10,7 @@ import { eq, and, or, inArray, sql } from 'drizzle-orm';
 import { getDb } from '@/db';
 import * as t from '@/db/schema';
 import { currentUser, safeUser, normalizeLogin, passwordRecord } from './auth';
-import { defaultConfig, parse, canReport, canViewCompetitionGroup, dayPlus, monday, snapshot, dutyPlan, dutyMechanism, dutyBalance, dutyScheduleWarnings, validateConfig, ruleScore, needsLearningSubject, cleanSubject, studentLoginBase, seatGroupIndex, type Row, type Config } from './domain';
+import { defaultConfig, parse, canManageDuty, lastDutyGroup, canReport, canViewCompetitionGroup, dayPlus, monday, snapshot, dutyPlan, dutyMechanism, dutyBalance, dutyScheduleWarnings, validateConfig, ruleScore, needsLearningSubject, cleanSubject, studentLoginBase, seatGroupIndex, type Row, type Config } from './domain';
 export class HttpError extends Error {
     constructor(public status: number, message: string) { super(message); }
 }
@@ -89,12 +89,12 @@ export async function state(classId?: string) {
     // projection functions, and legacy settings need not contain JSON.
     // Use indexed ranges, never long LIKE patterns (D1 has a stricter pattern limit).
     const archivePrefix='student-care:'+classId+':week-archive:';
-    const weekArchiveRows=teacher?await db.select().from(t.settings).where(sql`${t.settings.key} >= ${archivePrefix} AND ${t.settings.key} < ${archivePrefix+'\uffff'}`).limit(200):[];
+    const weekArchiveRows=user.role==='admin'?await db.select().from(t.settings).where(sql`${t.settings.key} >= ${archivePrefix} AND ${t.settings.key} < ${archivePrefix+'\uffff'}`).limit(200):[];
     const careRecords:Row[]=[];let careCursor='';const carePrefix='student-care:'+classId+':';
     while(careRecords.length<1001){
         const rows=await db.select().from(t.settings).where(sql`${t.settings.key} >= ${carePrefix} AND ${t.settings.key} < ${carePrefix+'\uffff'} AND ${t.settings.key} > ${careCursor} AND NOT (${t.settings.key} >= ${carePrefix+'attendance:'} AND ${t.settings.key} < ${carePrefix+'attendance:\uffff'}) AND NOT (${t.settings.key} >= ${carePrefix+'month-archive:'} AND ${t.settings.key} < ${carePrefix+'month-archive:\uffff'}) AND NOT (${t.settings.key} >= ${carePrefix+'week-archive:'} AND ${t.settings.key} < ${carePrefix+'week-archive:\uffff'})`).orderBy(t.settings.key).limit(100);
         if(!rows.length)break;careCursor=rows[rows.length-1].key;
-        const visible=careVisible(rows.map(r=>parse<Row>(r.value,{})).filter(r=>careKinds.includes(r.kind)),teacher,roles,own);
+        const visible=careVisible(rows.map(r=>parse<Row>(r.value,{})).filter(r=>careKinds.includes(r.kind)&&(r.kind!=='month-close'||user.role==='admin')),teacher,roles,own);
         for(const record of visible){const r={...record};delete r.snapshot;if(r.kind==='duty-proof'){if(typeof r.proof==='string'&&r.proof.startsWith('data:image/')){delete r.proof;r.hasImage=1;}delete r.history;}careRecords.push(r);}
         if(rows.length<100)break;
     }
@@ -102,7 +102,9 @@ export async function state(classId?: string) {
     const readIds=parse<string[]>(alertRead?.value,[]);
     const decisionSetting=await db.select().from(t.settings).where(eq(t.settings.key,'academic-conduct:'+classId)).get();const academicDecisions=parse<Row[]>(decisionSetting?.value,[]);
     const allAlerts=teacher?[...teacherAlerts(entries,c.config),...termConductAlerts(academicDecisions,c.config)].sort((a,b)=>b.date.localeCompare(a.date)||a.id.localeCompare(b.id)):[];
-    common.detail = { ...c.cls, config: c.config, teacher, ownId: own?.id, roles, groups, students: students.map(s => teacher ? s : ({ ...s, email: s.id === own?.id ? s.email : '', roles: s.roles })), periods: periods.map(p => ({ ...p,correctionOpen:p.status==='open'&&!!p.snapshot, snapshot: undefined })), entries: entries.filter(e => ids.has(e.studentId)&&visibleGroup(e.groupId)), reports: reports.filter(r=>visibleGroup(r.groupId)).map(r => teacher || canReport(roles, own?.groupId || '', r.groupId) ? r : { ...r, note: '', createdBy: '' }), grades: grades.filter(g => teacher || g.studentId === own?.id), conduct: conduct.filter(x => teacher || x.studentId === own?.id), fundCollections: collections.map(c=>({ ...c,paid:funds.filter(f=>f.collectionId===c.id&&f.status==='approved').reduce((n,f)=>n+(f.type==='income'?f.amount:-f.amount),0),payments: (teacher||roles.includes('treasurer')?funds.filter(f=>f.collectionId===c.id&&f.status==='approved'):funds.filter(f=>f.collectionId===c.id&&f.status==='approved'&&f.studentId===own?.id)).map(f=>({studentId:f.studentId,amount:f.amount,type:f.type,date:f.date,id:f.id}))})), fundSummary: {income: funds.filter(f=>f.status==='approved'&&f.type==='income').reduce((n,f)=>n+f.amount,0),expense:funds.filter(f=>f.status==='approved'&&f.type==='expense').reduce((n,f)=>n+f.amount,0)}, funds: funds.filter(f => teacher || roles.includes('treasurer') || (f.status === 'approved' && (!f.studentId || f.studentId === own?.id))).map(f => teacher || roles.includes('treasurer') ? f : { ...f, proof: '', createdBy: '' }), activities, dutyBalances:Object.fromEntries(periods.filter(p=>p.status==='locked').map(p=>[p.week,dutyBalance(parse<Row>(p.snapshot,{}),p.week,c.config,duties).filter((r:Row)=>teacher||r.studentId===own?.id)])),duties:duties.filter(x=>x.status!=='cancelled'), notices, feedback: feedback.filter(f => teacher || f.createdBy === user.email), audit,weekArchives:weekArchiveRows.map(r=>{const v=parse<Row>(r.value,{});delete v.snapshot;delete v.reports;return v}),publishedStandings,careRecords,careMore,academicDecisions:academicDecisions.filter(x=>teacher||x.studentId===own?.id),learningPoints:students.filter(s=>teacher||s.id===own?.id).map(s=>learningSummary(entries,c.config,s.id,academicPeriod(vietnamToday(),c.config).key)),teacherAlerts:teacher?allAlerts.map(a=>({...a,read:readIds.includes(a.id)})):[], ranks:Object.fromEntries(Object.entries(ranks).map(([w,rs]:any)=>{const bottom=Math.min(...rs.filter((g:Row)=>g.count).map((g:Row)=>g.score));return [w,rs.map((g:Row)=>({...g,isLast:!!g.count&&g.score===bottom})).filter((g:Row)=>visibleGroup(g.id))]})), historyScores, sheets, dailySheets, serverToday:vietnamToday(), speakingAvailable:speakingAllowed(c.config,vietnamToday()),speakingAvailableDates:[...new Set([...(c.config.speakingOpenDates||[]).filter(d=>d<=vietnamToday()),...(new Date(vietnamToday()+'T00:00:00Z').getUTCDay()===5?[vietnamToday()]:[])])], dutySwaps:dutySwaps.filter(x=>teacher||roles.some(r=>['leader','discipline'].includes(r))||x.fromStudentId===own?.id||x.toStudentId===own?.id),badgeTypes,badgeAwards:badgeAwards.filter(x=>teacher||x.studentId===own?.id),monthlyProfiles:monthlyProfiles.filter(x=>teacher||(x.studentId===own?.id&&x.status==='approved')) };
+    const dutyToday=vietnamToday(),canManageDuties=teacher||roles.includes('labor')||roles.includes('group')&&periods.some(p=>dayPlus(p.week,13)>=dutyToday&&lastDutyGroup(periods,dayPlus(p.week,7),own?.groupId||''));
+    const visibleDuties=duties.filter(x=>x.status!=='cancelled'&&(teacher||x.date===dutyToday||x.date>=dutyToday&&canManageDuty(false,roles,own,periods,x.date,students.find(s=>s.id===x.studentId)?.groupId||''))).map(x=>teacher?x:{...x,canRemove:x.date>=dutyToday&&x.status==='assigned'&&canManageDuty(false,roles,own,periods,x.date,students.find(s=>s.id===x.studentId)?.groupId||''),source: x.source.includes(' · Buổi chiều')?'Buổi chiều':x.source.includes(' · Buổi sáng')?'Buổi sáng':'Cả ngày',sourceKey:undefined});
+    common.detail = { ...c.cls, config: c.config, teacher, admin:user.role==='admin', ownId: own?.id, roles, groups, students: students.map(s => teacher ? s : ({ ...s, email: s.id === own?.id ? s.email : '', roles: s.roles })), periods: periods.map(p => ({ ...p,correctionOpen:p.status==='open'&&!!p.snapshot, snapshot: undefined })), entries: entries.filter(e => ids.has(e.studentId)&&visibleGroup(e.groupId)), reports: reports.filter(r=>visibleGroup(r.groupId)).map(r => teacher || canReport(roles, own?.groupId || '', r.groupId) ? r : { ...r, note: '', createdBy: '' }), grades: grades.filter(g => teacher || g.studentId === own?.id), conduct: conduct.filter(x => teacher || x.studentId === own?.id), fundCollections: collections.map(c=>({ ...c,paid:funds.filter(f=>f.collectionId===c.id&&f.status==='approved').reduce((n,f)=>n+(f.type==='income'?f.amount:-f.amount),0),payments: (teacher||roles.includes('treasurer')?funds.filter(f=>f.collectionId===c.id&&f.status==='approved'):funds.filter(f=>f.collectionId===c.id&&f.status==='approved'&&f.studentId===own?.id)).map(f=>({studentId:f.studentId,amount:f.amount,type:f.type,date:f.date,id:f.id}))})), fundSummary: {income: funds.filter(f=>f.status==='approved'&&f.type==='income').reduce((n,f)=>n+f.amount,0),expense:funds.filter(f=>f.status==='approved'&&f.type==='expense').reduce((n,f)=>n+f.amount,0)}, funds: funds.filter(f => teacher || roles.includes('treasurer') || (f.status === 'approved' && (!f.studentId || f.studentId === own?.id))).map(f => teacher || roles.includes('treasurer') ? f : { ...f, proof: '', createdBy: '' }), activities, dutyBalances:teacher?Object.fromEntries(periods.filter(p=>p.status==='locked').map(p=>[p.week,dutyBalance(parse<Row>(p.snapshot,{}),p.week,c.config,duties).filter((r:Row)=>teacher||r.studentId===own?.id)])):{},canManageDuties,dutyManageDates:teacher||roles.includes('labor')?null:periods.flatMap(p=>lastDutyGroup(periods,dayPlus(p.week,7),own?.groupId||'')?Array.from({length:7},(_,i)=>dayPlus(p.week,7+i)).filter(d=>d>=dutyToday):[]),duties:visibleDuties, notices, feedback: feedback.filter(f => teacher || f.createdBy === user.email), audit,weekArchives:weekArchiveRows.map(r=>{const v=parse<Row>(r.value,{});delete v.snapshot;delete v.reports;return v}),publishedStandings,careRecords,careMore,academicDecisions:academicDecisions.filter(x=>teacher||x.studentId===own?.id),learningPoints:students.filter(s=>teacher||s.id===own?.id).map(s=>learningSummary(entries,c.config,s.id,academicPeriod(vietnamToday(),c.config).key)),teacherAlerts:teacher?allAlerts.map(a=>({...a,read:readIds.includes(a.id)})):[], ranks:Object.fromEntries(Object.entries(ranks).map(([w,rs]:any)=>{const bottom=Math.min(...rs.filter((g:Row)=>g.count).map((g:Row)=>g.score));return [w,rs.map((g:Row)=>({...g,isLast:!!g.count&&g.score===bottom})).filter((g:Row)=>visibleGroup(g.id))]})), historyScores, sheets, dailySheets, serverToday:vietnamToday(), speakingAvailable:speakingAllowed(c.config,vietnamToday()),speakingAvailableDates:[...new Set([...(c.config.speakingOpenDates||[]).filter(d=>d<=vietnamToday()),...(new Date(vietnamToday()+'T00:00:00Z').getUTCDay()===5?[vietnamToday()]:[])])], dutySwaps:teacher?dutySwaps:[],badgeTypes,badgeAwards:badgeAwards.filter(x=>teacher||x.studentId===own?.id),monthlyProfiles:monthlyProfiles.filter(x=>teacher||(x.studentId===own?.id&&x.status==='approved')) };
     return common;
 }
 export async function careAttendance(classId:string,when:string){
@@ -202,7 +204,7 @@ export async function action(b: Row) {
             needTeacher();const s=await student(b.studentId),id=b.id?str(b.id,200):uid(),old=await careGet('parent-contact',id);carePut('parent-contact',id,{studentId:s.id,date:date(b.date),method:str(b.method,100),note:str(b.note,2000),followUp:b.followUp?date(b.followUp):'',status:b.status==='resolved'?'resolved':'open'},old,str(b.reason||'Ghi trao đổi phụ huynh',500));break;
         }
         case 'createHandover': {
-            needTeacher();const from=await student(b.fromId),to=await student(b.toId);if(from.id===to.id)fail(400,'Chọn hai học sinh khác nhau.');if(!parse<string[]>(from.roles,[]).includes(b.role)||!['leader','study','discipline','movement','treasurer','group'].includes(b.role))fail(400,'Người bàn giao chưa giữ chức vụ này.');if(b.role==='group'&&from.groupId!==to.groupId)fail(400,'Tổ trưởng mới phải cùng tổ.');
+            needTeacher();const from=await student(b.fromId),to=await student(b.toId);if(from.id===to.id)fail(400,'Chọn hai học sinh khác nhau.');if(!parse<string[]>(from.roles,[]).includes(b.role)||!['leader','study','discipline','labor','movement','treasurer','group'].includes(b.role))fail(400,'Người bàn giao chưa giữ chức vụ này.');if(b.role==='group'&&from.groupId!==to.groupId)fail(400,'Tổ trưởng mới phải cùng tổ.');
             const id=uid();carePut('handover',id,{fromId:from.id,toId:to.id,role:b.role,description:str(b.description,2000),status:'pending',fromAccepted:false,toAccepted:false},undefined);break;
         }
         case 'ackHandover': {
@@ -221,14 +223,14 @@ export async function action(b: Row) {
             else fail(400,'Loại hồ sơ không hỗ trợ duyệt.');break;
         }
         case 'restoreCareRecord': {
-            needTeacher();const kind=str(b.kind,50),id=str(b.id,200),old=await careGet(kind,id);if(!old||!['attendance','request','goal','parent-contact'].includes(kind))fail(400,'Chỉ khôi phục điểm danh, đơn, mục tiêu hoặc nhật ký phụ huynh.');const index=amount(b.version,0,79),before=old.history?.[index]?.before;if(!before)fail(400,'Không có phiên bản trước để khôi phục.');if(kind==='attendance')await monthUnlocked(old.date);carePut(kind,id,before,old,'Khôi phục phiên bản: '+str(b.reason,1000));break;
+            if(user.role!=='admin')fail(403,'Chỉ admin được chốt tháng, sao lưu và khôi phục.');const kind=str(b.kind,50),id=str(b.id,200),old=await careGet(kind,id);if(!old||!['attendance','request','goal','parent-contact'].includes(kind))fail(400,'Chỉ khôi phục điểm danh, đơn, mục tiêu hoặc nhật ký phụ huynh.');const index=amount(b.version,0,79),before=old.history?.[index]?.before;if(!before)fail(400,'Không có phiên bản trước để khôi phục.');if(kind==='attendance')await monthUnlocked(old.date);carePut(kind,id,before,old,'Khôi phục phiên bản: '+str(b.reason,1000));break;
         }
         case 'closeCareMonth': {
-            needTeacher();const cycle=str(b.cycleKey,80),p=periodFromKey(cycle,config);if(!p?.academic||!config.academicCalendar)fail(400,'Thiết lập tháng học trước.');if(p.end>vietnamToday())fail(400,'Chưa hết 4 tuần học của tháng này.');const old=await careGet('month-close',cycle);if(old?.status==='locked')fail(409,'Tháng đã chốt.');const periods=await db.select().from(t.periods).where(eq(t.periods.classId,classId));const weeks=Array.from({length:4},(_,i)=>dateForSchoolWeek(p.firstWeek+i,config.academicCalendar!));if(weeks.some(w=>!periods.some(x=>x.week===w&&x.status==='locked')))fail(409,'Cần chốt đủ 4 tuần học trước khi chốt tháng.');
+            if(user.role!=='admin')fail(403,'Chỉ admin được chốt tháng, sao lưu và khôi phục.');const cycle=str(b.cycleKey,80),p=periodFromKey(cycle,config);if(!p?.academic||!config.academicCalendar)fail(400,'Thiết lập tháng học trước.');if(p.end>vietnamToday())fail(400,'Chưa hết 4 tuần học của tháng này.');const old=await careGet('month-close',cycle);if(old?.status==='locked')fail(409,'Tháng đã chốt.');const periods=await db.select().from(t.periods).where(eq(t.periods.classId,classId));const weeks=Array.from({length:4},(_,i)=>dateForSchoolWeek(p.firstWeek+i,config.academicCalendar!));if(weeks.some(w=>!periods.some(x=>x.week===w&&x.status==='locked')))fail(409,'Cần chốt đủ 4 tuần học trước khi chốt tháng.');
             const d=(await state(classId)).detail,sheets=monthlyConductSheets(d,cycle);const archiveId=uid();const archiveKey=careKey(classId,'month-archive',archiveId);add(db.insert(t.settings).values({key:archiveKey,value:JSON.stringify({kind:'month-archive',id:archiveId,cycleKey:cycle,createdAt:now(),sheets})}));carePut('month-close',cycle,{cycleKey:cycle,label:p.label,status:'locked',comment:str(b.comment||'Đã đối chiếu hồ sơ tháng',2000),snapshot:{sheets},archives:[...(old?.archives||[]),archiveId]},old,'Chốt tháng, giữ bản tổng hợp bất biến');break;
         }
         case 'reopenCareMonth': {
-            needTeacher();const cycle=str(b.cycleKey,80),old=await careGet('month-close',cycle);if(!old||old.status!=='locked')fail(409,'Tháng chưa chốt.');carePut('month-close',cycle,{...old,status:'reopened'},old,'Mở đính chính: '+str(b.reason,2000));break;
+            if(user.role!=='admin')fail(403,'Chỉ admin được chốt tháng, sao lưu và khôi phục.');const cycle=str(b.cycleKey,80),old=await careGet('month-close',cycle);if(!old||old.status!=='locked')fail(409,'Tháng chưa chốt.');carePut('month-close',cycle,{...old,status:'reopened'},old,'Mở đính chính: '+str(b.reason,2000));break;
         }
 
         case 'updateClass': {
@@ -300,7 +302,7 @@ export async function action(b: Row) {
             if(!linked||linked.role!=='student')fail(400,'ID chưa được admin cấp tài khoản học sinh.');
             const name = str(b.name, 100);
             const r = b.roles || [];
-            if (!Array.isArray(r) || r.some(x => !['leader', 'study', 'discipline', 'movement', 'group', 'treasurer'].includes(x)))
+            if (!Array.isArray(r) || r.some(x => !['leader', 'study', 'discipline', 'labor', 'movement', 'group', 'treasurer'].includes(x)))
                 fail(400, 'Chức vụ không hợp lệ');
             const rows = await allStudents();
             if (rows.some(s => s.email === e && s.id !== b.id))
@@ -686,15 +688,19 @@ export async function action(b: Row) {
             break;
         }
         case 'addDuty': {
-            needTeacher();
             const s = await student(b.studentId);
             const when=date(b.date);
-            const occupied=await db.select().from(t.duties).where(and(eq(t.duties.classId,classId),eq(t.duties.studentId,s.id),eq(t.duties.date,when))).get();
+            const dutyPeriods=await db.select().from(t.periods).where(eq(t.periods.classId,classId));if(!canManageDuty(teacher,roles,own,dutyPeriods,when,s.groupId))fail(403,'Chỉ GV/admin, lớp phó lao động hoặc tổ trưởng tổ trực được phân công trong phạm vi của mình.');if(!teacher&&when<vietnamToday())fail(403,'Không được sửa lịch đã qua.');
+            const occupied=await db.select().from(t.duties).where(and(eq(t.duties.classId,classId),eq(t.duties.studentId,s.id),eq(t.duties.date,when),sql`${t.duties.status} != 'cancelled'`)).get();
             if(occupied)fail(409,'Học sinh đã có nhiệm vụ trong ngày này.');
             add(db.insert(t.duties).values({ id: uid(), classId, studentId: s.id, date: when, task: str(b.task, 100), source: str(b.source || 'Giáo viên phân công', 300), sourceKey: uid(), status: 'assigned' }));
             break;
         }
+        case 'removeDuty': {
+            const d=await db.select().from(t.duties).where(and(eq(t.duties.id,b.id),eq(t.duties.classId,classId))).get();if(!d||d.status==='cancelled')fail(404,'Không có lịch trực.');const s=await student(d.studentId),ps=await db.select().from(t.periods).where(eq(t.periods.classId,classId));if(!canManageDuty(teacher,roles,own,ps,d.date,s.groupId)||!teacher&&(d.date<vietnamToday()||d.status!=='assigned'))fail(403,'Không được gỡ lịch này.');const pending=await db.select().from(t.dutySwaps).where(eq(t.dutySwaps.classId,classId));if(pending.some(x=>['requested','accepted'].includes(x.status)&&[x.fromDutyId,x.toDutyId].includes(d.id)))fail(409,'Lượt trực đang có yêu cầu đổi, cần xử lý trước.');add(db.update(t.duties).set({status:'cancelled'}).where(eq(t.duties.id,d.id)));break;
+        }
         case 'updateDuty': {
+            needTeacher();
             const d = await db.select().from(t.duties).where(and(eq(t.duties.id, b.id), eq(t.duties.classId, classId))).get();
             if (!d||d.status==='cancelled')
                 fail(404, 'Không có lịch trực đang hiệu lực');
@@ -729,7 +735,7 @@ export async function action(b: Row) {
                 if(own?.id!==swap.toStudentId)fail(403,'Chỉ bạn được đề nghị mới có thể đồng ý / từ chối.');
                 if(!['accepted','rejected'].includes(b.status))fail(400,'Trạng thái không hợp lệ.');status=b.status;
             }else{
-                if(!teacher&&!roles.some(r=>['leader','discipline'].includes(r)))fail(403,'Chỉ giáo viên, lớp trưởng hoặc lớp phó nề nếp được duyệt đổi trực.');
+                needTeacher();
                 if(swap.status!=='accepted')fail(409,'Cần bạn nhận đổi đồng ý trước.');
                 if(!['approved','rejected'].includes(b.status))fail(400,'Trạng thái không hợp lệ.');status=b.status;
             }

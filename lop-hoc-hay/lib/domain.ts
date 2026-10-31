@@ -72,7 +72,7 @@ export function cleanSubject(raw: unknown): string {
     const candidate = raw.trim().replace(/\s+/g,' ');
     return classSubjects.find(x => x.toLocaleLowerCase('vi')===candidate.toLocaleLowerCase('vi')) || '';
 }
-export const roleLabels: Record<string, string> = { leader: 'Lớp trưởng', study: 'Lớp phó học tập', discipline: 'Lớp phó nề nếp', movement: 'Lớp phó phong trào', group: 'Tổ trưởng', treasurer: 'Thủ quỹ' };
+export const roleLabels: Record<string, string> = { leader: 'Lớp trưởng', study: 'Lớp phó học tập', discipline: 'Lớp phó nề nếp', labor: 'Lớp phó lao động', movement: 'Lớp phó phong trào', group: 'Tổ trưởng', treasurer: 'Thủ quỹ' };
 export function parse<T>(s: string | null | undefined, f: T): T { try {
     return s ? JSON.parse(s) : f;
 }
@@ -202,3 +202,7 @@ export function validateConfig(c: any): Config {
 
 export function studentLoginBase(name:string){const value=name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/g,'d').replace(/[^a-z0-9]/g,'');return (value.length>=3?value:'hs'+value).slice(0,36)}
 export function seatGroupIndex(seat:number,cols:number,count:number){return Math.min(count-1,Math.floor(((seat-1)%cols)*count/cols))}
+
+// The duty date is served by the preceding school week's official standings.
+export function lastDutyGroup(periods:Row[],date:string,groupId:string){const week=dayPlus(monday(new Date(date)), -7),p=periods.find(p=>p.week===week&&(p.status==='locked'||p.snapshot));const ranked=(parse<Row>(p?.snapshot,{}).standings||[]).filter((g:Row)=>g.count>0);return ranked.length>0&&ranked.some((g:Row)=>g.id===groupId&&g.score===Math.min(...ranked.map((x:Row)=>x.score)));}
+export function canManageDuty(teacher:boolean,roles:string[],own:Row|undefined,periods:Row[],date:string,studentGroup:string){return teacher||roles.includes('labor')||roles.includes('group')&&!!own&&own.groupId===studentGroup&&lastDutyGroup(periods,date,own.groupId);}
