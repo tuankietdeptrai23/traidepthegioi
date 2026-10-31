@@ -100,7 +100,7 @@ Thêm schema trong `db/schema.ts`, chạy `pnpm db:generate`, build và áp dụ
 
 Dữ liệu không nằm trong Git. Giữ bản sao lưu D1 tại nền tảng triển khai; CSV không phải bản sao lưu đầy đủ. Các thay đổi lớp được bảo vệ bởi revision và batch nguyên tử để tránh chốt kết quả sai khi cập nhật đồng thời.
 
-Giới hạn hiện tại: chưa tải tệp trực tiếp, chưa có nhiều đợt thu quỹ hoặc miễn giảm theo đợt, chưa tự tính điểm học kì theo hệ số, chưa đồng bộ phần mềm nhà trường, chưa có thông báo đẩy. Sơ đồ hỗ trợ kéo thả và thao tác chạm trên điện thoại. Xem [SECURITY.md](SECURITY.md), [ARCHITECTURE.md](ARCHITECTURE.md).
+Giới hạn hiện tại: chưa có miễn giảm riêng theo từng học sinh/đợt thu, chưa đồng bộ phần mềm nhà trường, chưa có thông báo đẩy. Số liệu thu chi cần đối chiếu với chứng từ và tiền thực tế. Sơ đồ hỗ trợ kéo thả và thao tác chạm trên điện thoại. Xem [SECURITY.md](SECURITY.md), [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ### Lớp học trực tuyến
 
@@ -149,3 +149,15 @@ Toàn bộ quy tắc được nhập trực tiếp trên cùng bảng Excel dùn
 Giáo viên chốt tuần sau khi đủ báo cáo được duyệt: kết quả và lịch trực tuần sau được lưu trong cùng giao dịch. Giao diện có dự kiến lịch dựa trên điểm đã duyệt. Bộ phân công bảo đảm đủ Quét lớp, Lau bảng, Lau bàn, Đổ rác kể cả tổ ít người; luân phiên vị trí, ưu tiên nam đổ rác nếu cấu hình, thêm một lượt cho học sinh có vi phạm đã duyệt và loại người đã lưu trữ khỏi phân công mới. Lịch cũ, tuần đã chốt và tài khoản không bị đặt lại.
 
 Kiểm tra cuối: 73 kiểm tra tích hợp + 7 kiểm tra danh sách; TypeScript và build production. Có kiểm tra vùng dán, số 0 KPI/ô trống, công thức không hợp lệ, phạm vi tổ/môn, phân công đủ nhiệm vụ, ưu tiên đổ rác, loại học sinh lưu trữ, khóa tuần và chống tạo lịch trùng. UI thử ở khung điện thoại 390 px: tổ trưởng dán/lưu vùng 2×2 và chuyển sang xem 4 tổ không còn input.
+
+## Nâng cấp quỹ lớp, báo cáo, phong trào và lịch trực
+
+- Giáo viên/thủ quỹ tạo các đợt thu: tên, lý do, định mức từng học sinh, hạn thu và thông báo lên bảng tin.
+- Thủ quỹ lọc theo tổ hoặc tên, tick học sinh đã nộp, ghi nhận tiền một phần hoặc nhiều lần. Mỗi lần xác nhận tạo bút toán sổ quỹ độc lập.
+- Thu/chi được ghi ngay bởi người có quyền thủ quỹ, điều chỉnh có bút toán ngược (không xóa lịch sử) và audit.
+- Số dư = tổng thu đã ghi sổ trừ tổng chi đã ghi sổ. Mọi người chỉ được xem các khoản đóng thuộc phạm vi được phép.
+- Báo cáo thi đua .xlsx nhiều trang có xếp hạng (cả tổ cuối), học sinh, vi phạm, ghi nhận, lịch trực và thu chi theo quyền.
+- Giáo viên nhập TKB theo thứ và môn. Lịch trực xếp những ngày có học: Trực lớp tối đa 4, Đổ rác 1, Lau bảng 1; ban cán sự được miễn, mỗi người không quá 1 việc mỗi ngày.
+- Lượt vi phạm đã duyệt tạo lượt trực tương ứng. Khi thiếu người, tổ cuối hỗ trợ; khi giáo viên xếp tay, lịch tự động không chiếm thêm suất vượt định mức.
+- Phong trào có thống kê, bộ lọc, quyền sửa/hủy hoạt động cho cán sự phụ trách; giáo viên giữ quyền chốt hoàn thành và cộng điểm.
+- **Migration bắt buộc khi triển khai:** `0005_fund_collections.sql` thêm bảng `fund_collections` và cột `funds.collection_id`. Sao lưu D1 và áp dụng migration trước khi đưa bản mới lên production. GitHub merge không tự đồng bộ ChatGPT Sites.
