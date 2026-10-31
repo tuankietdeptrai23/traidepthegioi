@@ -8,7 +8,7 @@ import { eq, and, or, inArray, sql } from 'drizzle-orm';
 import { getDb } from '@/db';
 import * as t from '@/db/schema';
 import { currentUser, safeUser, normalizeLogin, passwordRecord } from './auth';
-import { defaultConfig, parse, canReport, monday, snapshot, dutyPlan, validateConfig, ruleScore, needsLearningSubject, cleanSubject, studentLoginBase, seatGroupIndex, type Row, type Config } from './domain';
+import { defaultConfig, parse, canReport, monday, snapshot, dutyPlan, dutyMechanism, validateConfig, ruleScore, needsLearningSubject, cleanSubject, studentLoginBase, seatGroupIndex, type Row, type Config } from './domain';
 export class HttpError extends Error {
     constructor(public status: number, message: string) { super(message); }
 }
@@ -47,7 +47,7 @@ async function context(classId: string) {
     const teacher = user.role === 'admin' || (user.role === 'teacher' && cls.teacherEmail === user.email);
     if (!teacher && !own)
         fail(403, 'Bạn không có quyền truy cập lớp này');
-    const config={...defaultConfig,...parse<Config>(cls.config,defaultConfig)};if(config.dutyPolicyVersion!==2)config.lastDutyDays=2;config.dutyPolicyVersion=2;
+    const config={...defaultConfig,...parse<Config>(cls.config,defaultConfig)};if(config.dutyPolicyVersion!==3)config.lastDutyDays=2;config.dutyPolicyVersion=3;
     return {db,user,cls,own,teacher,roles:parse<string[]>(own?.roles,[]),config};
 }
 async function log(db: any, user: Row, classId: string | null, action: string, details: Row) { await db.insert(t.audit).values({ id: uid(), classId, actor: user.email, action, details: JSON.stringify(details), createdAt: now() }); }
@@ -60,6 +60,13 @@ export async function state(classId?: string) {
     if (!classId)
         return common;
     const c = await context(classId);
+    // One-time correction explicitly requested for class 12A2, week starting 2 Nov.
+    // Runs only under the existing class teacher/admin session; never on anonymous requests.
+    if(c.teacher&&classId==='f395c786-c04e-46e4-aca3-beacad94ef52'&&vietnamToday()<='2026-11-08'){
+        const key='duty-repair:v3:2026-11-02:'+classId,done=await db.select().from(t.settings).where(eq(t.settings.key,key)).get();
+        const period=await db.select().from(t.periods).where(and(eq(t.periods.classId,classId),eq(t.periods.week,'2026-10-26'))).get();
+        if(!done&&period?.status==='locked'){await action({action:'rebuildDutyPlan',classId,week:'2026-10-26'});await db.insert(t.settings).values({key,value:now()}).onConflictDoNothing();const fresh=await context(classId);Object.assign(c,fresh);}
+    }
     const { teacher, own, roles } = c;
     const classFilter = (table: any) => eq(table.classId, classId);
     const [groups, students, periods, entries, reports, grades, conduct, funds, collections, activities, duties, notices, feedback, audit, dutySwaps, badgeTypes, badgeAwards, monthlyProfiles] = await Promise.all([
@@ -77,7 +84,7 @@ export async function state(classId?: string) {
     const readIds=parse<string[]>(alertRead?.value,[]);
     const decisionSetting=await db.select().from(t.settings).where(eq(t.settings.key,'academic-conduct:'+classId)).get();const academicDecisions=parse<Row[]>(decisionSetting?.value,[]);
     const allAlerts=teacher?[...teacherAlerts(entries,c.config),...termConductAlerts(academicDecisions,c.config)].sort((a,b)=>b.date.localeCompare(a.date)||a.id.localeCompare(b.id)):[];
-    common.detail = { ...c.cls, config: c.config, teacher, ownId: own?.id, roles, groups, students: students.map(s => teacher ? s : ({ ...s, email: s.id === own?.id ? s.email : '', roles: s.roles })), periods: periods.map(p => ({ ...p, snapshot: undefined })), entries: entries.filter(e => ids.has(e.studentId)), reports: reports.map(r => teacher || canReport(roles, own?.groupId || '', r.groupId) ? r : { ...r, note: '', createdBy: '' }), grades: grades.filter(g => teacher || g.studentId === own?.id), conduct: conduct.filter(x => teacher || x.studentId === own?.id), fundCollections: collections.map(c=>({ ...c,paid:funds.filter(f=>f.collectionId===c.id&&f.status==='approved').reduce((n,f)=>n+(f.type==='income'?f.amount:-f.amount),0),payments: (teacher||roles.includes('treasurer')?funds.filter(f=>f.collectionId===c.id&&f.status==='approved'):funds.filter(f=>f.collectionId===c.id&&f.status==='approved'&&f.studentId===own?.id)).map(f=>({studentId:f.studentId,amount:f.amount,type:f.type,date:f.date,id:f.id}))})), fundSummary: {income: funds.filter(f=>f.status==='approved'&&f.type==='income').reduce((n,f)=>n+f.amount,0),expense:funds.filter(f=>f.status==='approved'&&f.type==='expense').reduce((n,f)=>n+f.amount,0)}, funds: funds.filter(f => teacher || roles.includes('treasurer') || (f.status === 'approved' && (!f.studentId || f.studentId === own?.id))).map(f => teacher || roles.includes('treasurer') ? f : { ...f, proof: '', createdBy: '' }), activities, duties, notices, feedback: feedback.filter(f => teacher || f.createdBy === user.email), audit,academicDecisions:academicDecisions.filter(x=>teacher||x.studentId===own?.id),learningPoints:students.filter(s=>teacher||s.id===own?.id).map(s=>learningSummary(entries,c.config,s.id,academicPeriod(vietnamToday(),c.config).key)),teacherAlerts:teacher?allAlerts.map(a=>({...a,read:readIds.includes(a.id)})):[], ranks, historyScores, sheets, dailySheets, serverToday:vietnamToday(), speakingAvailable:speakingAllowed(c.config,vietnamToday()),speakingAvailableDates:[...new Set([...(c.config.speakingOpenDates||[]).filter(d=>d<=vietnamToday()),...(new Date(vietnamToday()+'T00:00:00Z').getUTCDay()===5?[vietnamToday()]:[])])], dutySwaps:dutySwaps.filter(x=>teacher||roles.some(r=>['leader','discipline'].includes(r))||x.fromStudentId===own?.id||x.toStudentId===own?.id),badgeTypes,badgeAwards:badgeAwards.filter(x=>teacher||x.studentId===own?.id),monthlyProfiles:monthlyProfiles.filter(x=>teacher||(x.studentId===own?.id&&x.status==='approved')) };
+    common.detail = { ...c.cls, config: c.config, teacher, ownId: own?.id, roles, groups, students: students.map(s => teacher ? s : ({ ...s, email: s.id === own?.id ? s.email : '', roles: s.roles })), periods: periods.map(p => ({ ...p, snapshot: undefined })), entries: entries.filter(e => ids.has(e.studentId)), reports: reports.map(r => teacher || canReport(roles, own?.groupId || '', r.groupId) ? r : { ...r, note: '', createdBy: '' }), grades: grades.filter(g => teacher || g.studentId === own?.id), conduct: conduct.filter(x => teacher || x.studentId === own?.id), fundCollections: collections.map(c=>({ ...c,paid:funds.filter(f=>f.collectionId===c.id&&f.status==='approved').reduce((n,f)=>n+(f.type==='income'?f.amount:-f.amount),0),payments: (teacher||roles.includes('treasurer')?funds.filter(f=>f.collectionId===c.id&&f.status==='approved'):funds.filter(f=>f.collectionId===c.id&&f.status==='approved'&&f.studentId===own?.id)).map(f=>({studentId:f.studentId,amount:f.amount,type:f.type,date:f.date,id:f.id}))})), fundSummary: {income: funds.filter(f=>f.status==='approved'&&f.type==='income').reduce((n,f)=>n+f.amount,0),expense:funds.filter(f=>f.status==='approved'&&f.type==='expense').reduce((n,f)=>n+f.amount,0)}, funds: funds.filter(f => teacher || roles.includes('treasurer') || (f.status === 'approved' && (!f.studentId || f.studentId === own?.id))).map(f => teacher || roles.includes('treasurer') ? f : { ...f, proof: '', createdBy: '' }), activities, duties:duties.filter(x=>x.status!=='cancelled'), notices, feedback: feedback.filter(f => teacher || f.createdBy === user.email), audit,academicDecisions:academicDecisions.filter(x=>teacher||x.studentId===own?.id),learningPoints:students.filter(s=>teacher||s.id===own?.id).map(s=>learningSummary(entries,c.config,s.id,academicPeriod(vietnamToday(),c.config).key)),teacherAlerts:teacher?allAlerts.map(a=>({...a,read:readIds.includes(a.id)})):[], ranks, historyScores, sheets, dailySheets, serverToday:vietnamToday(), speakingAvailable:speakingAllowed(c.config,vietnamToday()),speakingAvailableDates:[...new Set([...(c.config.speakingOpenDates||[]).filter(d=>d<=vietnamToday()),...(new Date(vietnamToday()+'T00:00:00Z').getUTCDay()===5?[vietnamToday()]:[])])], dutySwaps:dutySwaps.filter(x=>teacher||roles.some(r=>['leader','discipline'].includes(r))||x.fromStudentId===own?.id||x.toStudentId===own?.id),badgeTypes,badgeAwards:badgeAwards.filter(x=>teacher||x.studentId===own?.id),monthlyProfiles:monthlyProfiles.filter(x=>teacher||(x.studentId===own?.id&&x.status==='approved')) };
     return common;
 }
 export async function action(b: Row) {
@@ -171,6 +178,10 @@ export async function action(b: Row) {
         case 'reorderRules': {
             needTeacher();const ids=b.ruleIds;if(!Array.isArray(ids)||ids.length!==config.rules.length||new Set(ids).size!==ids.length||ids.some((id:any)=>typeof id!=='string'||!config.rules.some(r=>r.id===id)))fail(400,'Thứ tự phải chứa đủ các quy tắc hiện tại, không trùng hoặc thêm quy tắc.');
             const rules=ids.map((id:string)=>config.rules.find(r=>r.id===id)!);add(db.update(t.classes).set({config:JSON.stringify({...config,rules})}).where(eq(t.classes.id,classId)));break;
+        }
+        case 'saveDutyMechanism': {
+            needTeacher();let checked:Config;try{checked=validateConfig({...config,dutyMechanism:b.policy,lastDutyDays:b.lastDutyDays,violationDuty:b.violationDuty,preferMaleTrash:b.preferMaleTrash})}catch(e){fail(400,(e as Error).message)}
+            add(db.update(t.classes).set({config:JSON.stringify(checked)}).where(eq(t.classes.id,classId)));break;
         }
         case 'saveAcademicCalendar': {
             needTeacher();let checked:Config;try{checked=validateConfig({...config,academicCalendar:b.calendar})}catch(e){fail(400,(e as Error).message)}
@@ -366,6 +377,17 @@ export async function action(b: Row) {
             add(db.update(t.entries).set({ status: 'rejected', reviewNote: str(b.note, 2000) }).where(eq(t.entries.id, e.id)));
             break;
         }
+        case 'rebuildDutyPlan': {
+            needTeacher();const w=week(b.week);const period=await db.select().from(t.periods).where(and(eq(t.periods.classId,classId),eq(t.periods.week,w))).get();if(!period||period.status!=='locked')fail(400,'Chọn tuần đã chốt.');
+            const all=(await db.select().from(t.duties).where(eq(t.duties.classId,classId))).filter(d=>d.status!=='cancelled');
+            const swaps=await db.select().from(t.dutySwaps).where(eq(t.dutySwaps.classId,classId));const protectedIds=new Set(swaps.filter(s=>['requested','accepted'].includes(s.status)).flatMap(s=>[s.fromDutyId,s.toDutyId]));
+            const replace=all.filter(d=>d.date>=vietnamToday()&&d.status==='assigned'&&!protectedIds.has(d.id)&&['automatic:','last:','violation:'].some(p=>d.sourceKey.startsWith(p+w+':')));const replaceIds=new Set(replace.map(d=>d.id)),keep=all.filter(d=>!replaceIds.has(d.id));
+            const sn=parse<Row>(period.snapshot,{}),currentStudents=await allStudents();sn.students=(sn.students||[]).map((s:Row)=>({...s,active:currentStudents.find(x=>x.id===s.id)?.active||0,roles:currentStudents.find(x=>x.id===s.id)?.roles||s.roles}));
+            const rows=dutyPlan(sn,w,config,keep,vietnamToday()),policy=dutyMechanism(config),target=policy.classWorkers+policy.trashWorkers+policy.boardWorkers;
+            for(const date of new Set([...rows.map(r=>r.date),...(config.timetable||defaultConfig.timetable||[]).filter(d=>schoolSessions(d).length).map(d=>{const day=new Date(w+'T00:00:00Z');day.setUTCDate(day.getUTCDate()+7+d.weekday-1);return day.toISOString().slice(0,10)}).filter(d=>d>=vietnamToday()&&!config.academicCalendar?.excludedWeeks.includes(monday(new Date(d))))])){const combined=[...rows.filter(r=>r.date===date),...keep.filter(r=>r.date===date)];if(new Set(combined.map(r=>r.studentId)).size<target)fail(400,'Không đủ '+target+' người hợp lệ ngày '+date+'. Kiểm tra miễn cán sự và sĩ số.');}
+            for(const d of replace)add(db.update(t.duties).set({status:'cancelled'}).where(eq(t.duties.id,d.id)));
+            const generation=uid();for(const d of rows)add(db.insert(t.duties).values({id:uid(),classId,...d,sourceKey:d.sourceKey+':'+generation} as any));break;
+        }
         case 'lockWeek': {
             needTeacher();
             const w = week(b.week);
@@ -384,10 +406,11 @@ export async function action(b: Row) {
                 fail(400, 'Vẫn còn ghi nhận chưa được duyệt');
             const sn = snapshot(gs, sts, es, config);
             add(db.insert(t.periods).values({ id: uid(), classId, week: w, status: 'locked', snapshot: JSON.stringify(sn), createdAt: now() }));
-            const previousDuties=await db.select().from(t.duties).where(eq(t.duties.classId,classId));
+            const previousDuties=(await db.select().from(t.duties).where(eq(t.duties.classId,classId))).filter(x=>x.status!=='cancelled');
             const automatic=dutyPlan(sn,w,config,previousDuties);
+            const mechanism=dutyMechanism(config),required=mechanism.classWorkers+mechanism.trashWorkers+mechanism.boardWorkers;
             const schoolDays=(config.timetable||defaultConfig.timetable||[]).filter(d=>schoolSessions(d).length);
-            for(const d of schoolDays){const day=new Date(w+'T00:00:00Z');day.setUTCDate(day.getUTCDate()+7+d.weekday-1);const when=day.toISOString().slice(0,10);const assigned=[...previousDuties.filter(x=>x.date===when),...automatic.filter(x=>x.date===when)];if(new Set(assigned.map(x=>x.studentId)).size<6)fail(400,'Ngày '+when+' chưa đủ 6 người trực hợp lệ. Kiểm tra sĩ số, ban cán sự và lịch đã phân công trước khi chốt.');}
+            for(const d of schoolDays){const day=new Date(w+'T00:00:00Z');day.setUTCDate(day.getUTCDate()+7+d.weekday-1);const when=day.toISOString().slice(0,10);if(config.academicCalendar?.excludedWeeks.includes(monday(new Date(when))))continue;const assigned=[...previousDuties.filter(x=>x.date===when),...automatic.filter(x=>x.date===when)];if(new Set(assigned.map(x=>x.studentId)).size<required)fail(400,'Ngày '+when+' chưa đủ '+required+' người trực hợp lệ. Kiểm tra sĩ số, ban cán sự và lịch đã phân công trước khi chốt.');}
             for (const d of automatic)
                 add(db.insert(t.duties).values({ id: uid(), classId, ...d } as any).onConflictDoNothing());
             break;

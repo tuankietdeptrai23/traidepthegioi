@@ -19,7 +19,8 @@ export type Config = {
     speakingOpenDates?: string[];
     academicBands?: AcademicBand[];
     timetable?: TimetableDay[];
-    dutyPolicyVersion?: 2;
+    dutyPolicyVersion?: 2|3;
+    dutyMechanism?: {classWorkers:number;trashWorkers:number;boardWorkers:number;violationTurns:number;exemptOfficers:boolean;fallback:'balanced'|'last-group'};
     base: number;
     mode: 'sum' | 'average';
     rules: Rule[];
@@ -56,7 +57,7 @@ export function speakingKpiLabel(rule: Rule, count: number): string {
 }
 export const defaultTimetable = [1,2,3,4,5].map(weekday=>({weekday,subjects:[] as string[]}));
 export const dutyTasks = [{task:'Trực lớp',limit:4},{task:'Đổ rác',limit:1},{task:'Lau bảng',limit:1}] as const;
-export const defaultConfig: Config = { dutyPolicyVersion:2, timetable:defaultTimetable, base: 100, mode: 'sum', bonusAttendance: 10, bonusUniform: 10, bonusClean: 15, lastDutyDays: 2, violationDuty: true, preferMaleTrash: true, rows: 5, cols: 8, fundTarget: 100000, rewardWins: 3, conductBands: [{ min: 100, level: 'Tốt' }, { min: 80, level: 'Khá' }, { min: 60, level: 'Đạt' }, { min: -99999, level: 'Chưa đạt' }], rules: [
+export const defaultConfig: Config = { dutyPolicyVersion:3, timetable:defaultTimetable, base: 100, mode: 'sum', bonusAttendance: 10, bonusUniform: 10, bonusClean: 15, lastDutyDays: 2, violationDuty: true, preferMaleTrash: true, rows: 5, cols: 8, fundTarget: 100000, rewardWins: 3, conductBands: [{ min: 100, level: 'Tốt' }, { min: 80, level: 'Khá' }, { min: 60, level: 'Đạt' }, { min: -99999, level: 'Chưa đạt' }], rules: [
         { id: 'late', name: 'Đi học trễ', category: 'attendance', points: -5 }, { id: 'absence-permit', name: 'Nghỉ học có phép', category: 'absence', points: -2 }, { id: 'absence', name: 'Nghỉ không phép', category: 'absence', points: -5 }, { id: 'skip', name: 'Cúp tiết / bỏ chào cờ', category: 'absence', points: -10 },
         { id: 'grade8', name: 'Kiểm tra bài cũ: 8 điểm', category: 'learning', points: 5 }, { id: 'grade9', name: 'Kiểm tra bài cũ: 9 điểm', category: 'learning', points: 10 }, { id: 'grade10', name: 'Kiểm tra bài cũ: 10 điểm', category: 'learning', points: 15 },
         defaultSpeakingRule,
@@ -87,40 +88,41 @@ export function standings(groups: Row[], students: Row[], entries: Row[], config
 }
 export function snapshot(groups: Row[], students: Row[], entries: Row[], config: Config) { return { config, standings: standings(groups, students, entries, config), students: students.map(s => ({ ...s, score: config.base + entries.filter(e => e.studentId === s.id && e.status === 'approved').reduce((n, e) => n + e.delta, 0) })), entries, lockedAt: new Date().toISOString() }; }
 export function canReport(roles: string[], ownGroup: string, group: string) { return roles.some(r=>['leader','discipline','study','movement','treasurer'].includes(r)) || (roles.includes('group') && ownGroup === group); }
-/** Each last-place group receives its own two school days. Violations are extra turns. */
-export function dutyPlan(snap:Row,week:string,config:Config,existing:Row[]=[]):Row[]{
+export function dutyMechanism(config:Config){return config.dutyMechanism||{classWorkers:4,trashWorkers:1,boardWorkers:1,violationTurns:1,exemptOfficers:true,fallback:'balanced' as const}}
+/** Exact daily capacity; last-place turns and violation turns are independent debts. */
+export function dutyPlan(snap:Row,week:string,config:Config,existing:Row[]=[],notBefore=''):Row[]{
+ const policy=dutyMechanism(config),target=policy.classWorkers+policy.trashWorkers+policy.boardWorkers;
  const ranked=(snap.standings||[]).filter((g:Row)=>g.count>0);if(!ranked.length)return [];
- const minimum=Math.min(...ranked.map((g:Row)=>g.score));const last=ranked.filter((g:Row)=>g.score===minimum).sort((a:Row,b:Row)=>a.name?.localeCompare(b.name||'','vi')||String(a.id).localeCompare(String(b.id)));
- const eligible:Row[]=(snap.students||[]).filter((s:Row)=>s.active&&parse<string[]>(s.roles,[]).length===0);if(!eligible.length)return [];
+ const lastScore=Math.min(...ranked.map((g:Row)=>g.score)),lastIds=new Set(ranked.filter((g:Row)=>g.score===lastScore).map((g:Row)=>g.id));
+ const eligible:Row[]=(snap.students||[]).filter((s:Row)=>s.active&&(!policy.exemptOfficers||parse<string[]>(s.roles,[]).length===0));if(!eligible.length)return [];
  const days=(config.timetable||defaultTimetable).filter(d=>schoolSessions(d).length).sort((a,b)=>a.weekday-b.weekday);if(!days.length)return [];
- const lastIds=new Set(last.map((g:Row)=>g.id)),lastMembers=eligible.filter(s=>lastIds.has(s.groupId));
- const groupDays=last.flatMap((group:Row)=>Array.from({length:config.lastDutyDays},(_,i)=>({group,index:i+1})));
- const owed=new Map<string,number>();for(const e of snap.entries||[])if(config.violationDuty&&e.status==='approved'&&e.delta<0&&eligible.some(s=>s.id===e.studentId))owed.set(e.studentId,(owed.get(e.studentId)||0)+Math.max(1,Math.floor(Number(e.count)||1)));
+ const base=new Map(eligible.map(s=>[s.id,lastIds.has(s.groupId)?config.lastDutyDays:0])),owed=new Map(eligible.map(s=>[s.id,0]));
+ for(const e of snap.entries||[])if(config.violationDuty&&e.status==='approved'&&e.delta<0&&owed.has(e.studentId))owed.set(e.studentId,(owed.get(e.studentId)||0)+Math.max(1,Math.floor(Number(e.count)||1))*policy.violationTurns);
+ const related=(d:Row)=>['automatic:','last:','violation:'].some(p=>d.sourceKey?.startsWith(p+week+':'));
+ for(const d of existing.filter(related)){const debt=d.source?.startsWith('Tổ cuối')?base:d.source?.startsWith('Bù')?owed:null;if(debt?.has(d.studentId))debt.set(d.studentId,Math.max(0,(debt.get(d.studentId)||0)-1))}
  const loads=new Map<string,number>();for(const d of existing)loads.set(d.studentId,(loads.get(d.studentId)||0)+1);
- const out:Row[]=[],previous=new Map<string,string>();const seed=Math.floor(Date.parse(week+'T00:00:00Z')/604800000);let dayIndex=0;
- const maxRounds=groupDays.length+Math.max(0,...owed.values())+existing.length+2;
+ const out:Row[]=[],previous=new Map<string,string>(),seed=Math.floor(Date.parse(week+'T00:00:00Z')/604800000);
+ const allDebt=()=>[...base.values(),...owed.values()].reduce((a,b)=>a+b,0);
+ const maxRounds=allDebt()+existing.length+Math.max(0,Math.ceil((Date.parse(notBefore||week)-Date.parse(week))/604800000))+3;
  for(let round=0;round<maxRounds;round++){
-  let made=0;
-  for(const day of days){
-   const date=dayPlus(week,7+round*7+day.weekday-1);const groupDay=groupDays[dayIndex++];const reserved=existing.filter(x=>x.date===date);const used=new Set<string>(reserved.map(x=>x.studentId));
-   const team=groupDay?eligible.filter(s=>s.groupId===groupDay.group.id):[];
-   const target=Math.max(6,used.size+team.filter(s=>!used.has(s.id)).length);
-   const classAlready=reserved.filter(r=>!['Đổ rác','Lau bảng'].includes(r.task)).length;
-   const slots=[...Array(Math.max(0,target-2-classAlready)).fill('Trực lớp'),...(!reserved.some(r=>r.task==='Đổ rác')?['Đổ rác']:[]),...(!reserved.some(r=>r.task==='Lau bảng')?['Lau bảng']:[])].slice(0,Math.max(0,target-used.size));
-   for(const task of slots){
-    const required=team.filter(s=>!used.has(s.id));const violations=eligible.filter(s=>!used.has(s.id)&&(owed.get(s.id)||0)>0);
-    const backup=lastMembers.filter(s=>!used.has(s.id));
-    const pool=groupDay?(required.length?required:backup.length?backup:eligible.filter(s=>!used.has(s.id))):(violations.length?violations:backup.length?backup:eligible.filter(s=>!used.has(s.id)));
+  for(const day of days){const date=dayPlus(week,7+round*7+day.weekday-1);if(date<notBefore||config.academicCalendar?.excludedWeeks.includes(monday(new Date(date))))continue;
+   const reserved=existing.filter(d=>d.date===date),used=new Set<string>(reserved.map(d=>d.studentId));
+   const classUsed=reserved.filter(d=>!['Đổ rác','Lau bảng'].includes(d.task)).length;
+   const slots=[...Array(Math.max(0,policy.classWorkers-classUsed)).fill('Trực lớp'),...Array(Math.max(0,policy.trashWorkers-reserved.filter(d=>d.task==='Đổ rác').length)).fill('Đổ rác'),...Array(Math.max(0,policy.boardWorkers-reserved.filter(d=>d.task==='Lau bảng').length)).fill('Lau bảng')].slice(0,Math.max(0,target-used.size));
+   for(const task of slots){const available=eligible.filter(s=>!used.has(s.id)),group=available.filter(s=>(base.get(s.id)||0)>0),violations=available.filter(s=>(owed.get(s.id)||0)>0);
+    const kind=group.length?'group':violations.length?'violation':'filler';let pool=group.length?group:violations.length?violations:available;
+    if(kind==='filler'&&policy.fallback==='last-group'){const last=pool.filter(s=>lastIds.has(s.groupId));if(last.length)pool=last;}
     if(!pool.length)continue;
-    const person=pool.slice().sort((a,b)=>{const diff=(loads.get(a.id)||0)-(loads.get(b.id)||0);if(diff)return diff;if(task==='Đổ rác'&&config.preferMaleTrash&&a.gender!==b.gender){if(a.gender==='male')return -1;if(b.gender==='male')return 1;}const repeated=Number(previous.get(a.id)===task)-Number(previous.get(b.id)===task);if(repeated)return repeated;return ((eligible.indexOf(a)+seed)%eligible.length)-((eligible.indexOf(b)+seed)%eligible.length)})[0];
-    const violation=!groupDay&&(owed.get(person.id)||0)>0;if(violation)owed.set(person.id,(owed.get(person.id)||0)-1);
-    const sessions=schoolSessions(day);const morningCount=out.filter(r=>r.date===date&&r.task==='Trực lớp'&&r.source.endsWith(' · Buổi sáng')).length;const session=sessions.length===1?sessions[0]:task==='Đổ rác'?'afternoon':task==='Lau bảng'?'morning':morningCount<Math.ceil((target-2)/2)?'morning':'afternoon';
-    const reason=groupDay?'Tổ cuối tuần '+week+' · '+groupDay.group.name+' · Ngày '+groupDay.index+'/'+config.lastDutyDays:violation?'Bù 1 lượt vi phạm tuần '+week:'Bổ sung đủ người từ tổ cuối tuần '+week;
-    out.push({studentId:person.id,date,task,source:reason+(session==='afternoon'?' · Buổi chiều':' · Buổi sáng'),sourceKey:'automatic:'+week+':'+date+':'+person.id});used.add(person.id);loads.set(person.id,(loads.get(person.id)||0)+1);previous.set(person.id,task);made++;
+    const person=pool.slice().sort((a,b)=>{if(kind==='group'){const diff=(base.get(b.id)||0)-(base.get(a.id)||0);if(diff)return diff;}if(kind==='violation'){const diff=(owed.get(b.id)||0)-(owed.get(a.id)||0);if(diff)return diff;}const diff=(loads.get(a.id)||0)-(loads.get(b.id)||0);if(diff)return diff;if(task==='Đổ rác'&&config.preferMaleTrash&&a.gender!==b.gender){if(a.gender==='male')return -1;if(b.gender==='male')return 1;}return Number(previous.get(a.id)===task)-Number(previous.get(b.id)===task)||((eligible.indexOf(a)+seed)%eligible.length)-((eligible.indexOf(b)+seed)%eligible.length)})[0];
+    if(kind==='group')base.set(person.id,(base.get(person.id)||0)-1);else if(kind==='violation')owed.set(person.id,(owed.get(person.id)||0)-1);
+    const groupName=ranked.find((g:Row)=>g.id===person.groupId)?.name||'Tổ cuối';
+    const reason=kind==='group'?'Tổ cuối tuần '+week+' · '+groupName+' · Lượt '+(config.lastDutyDays-(base.get(person.id)||0))+'/'+config.lastDutyDays:kind==='violation'?'Bù 1 lượt vi phạm tuần '+week:'Luân phiên bổ sung đủ '+target+' người/ngày';
+    const sessions=schoolSessions(day),morning=out.filter(r=>r.date===date&&r.task==='Trực lớp'&&r.source.endsWith(' · Buổi sáng')).length;
+    const session=sessions.length===1?sessions[0]:task==='Đổ rác'?'afternoon':task==='Lau bảng'?'morning':morning<Math.ceil(policy.classWorkers/2)?'morning':'afternoon';
+    out.push({studentId:person.id,date,task,source:reason+(session==='afternoon'?' · Buổi chiều':' · Buổi sáng'),sourceKey:'automatic:'+week+':'+date+':'+person.id});used.add(person.id);loads.set(person.id,(loads.get(person.id)||0)+1);previous.set(person.id,task);
    }
   }
-  // Finish every school day in the week even if the violation queue becomes empty midweek.
-  if(dayIndex>=groupDays.length&&[...owed.values()].every(n=>n===0))break;if(!made)break;
+  if(!allDebt())break;
  }
  return out;
 }
@@ -133,6 +135,7 @@ export function validateConfig(c: any): Config {
     if(c.rules.some((r:any)=>r.serious!==undefined&&typeof r.serious!=='boolean'))throw Error('Cờ cảnh báo nghiêm trọng phải là có / không.');
     if(c.academicCalendar!==undefined){const a=c.academicCalendar;const validWeek=(s:any)=>typeof s==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(s)&&Number.isFinite(Date.parse(s+'T00:00:00Z'))&&new Date(s+'T00:00:00Z').toISOString().slice(0,10)===s&&monday(new Date(s))===s;if(!a||!validWeek(a.anchorWeek)||!Number.isInteger(a.anchorNumber)||a.anchorNumber<1||a.anchorNumber>60||!Number.isInteger(a.monthsPerTerm)||a.monthsPerTerm<1||a.monthsPerTerm>6||!Array.isArray(a.excludedWeeks)||a.excludedWeeks.length>80||a.excludedWeeks.some((w:any)=>!validWeek(w))||new Set(a.excludedWeeks).size!==a.excludedWeeks.length||a.excludedWeeks.includes(a.anchorWeek))throw Error('Lịch tuần học: chọn thứ Hai, số tuần 1–60, kỳ 1–6 tháng và các tuần nghỉ hợp lệ.');}
     if(c.learningPoints!==undefined){const p=c.learningPoints;if(!p||!Number.isInteger(p.initial)||p.initial<1||p.initial>10000||!p.penalties||Array.isArray(p.penalties)||typeof p.penalties!=='object'||Object.keys(p.penalties).length>101||Object.entries(p.penalties).some(([k,v]:[string,any])=>k!=='unlearned'&&!c.rules.some((r:Rule)=>r.id===k)||!Number.isInteger(v)||v<0||v>1000))throw Error('Điểm Học tập: điểm ban đầu từ 1–10000, mức trừ từ 0–1000 và thuộc quy tắc của lớp.');}
+    if(c.dutyMechanism!==undefined){const p=c.dutyMechanism;if(!p||['classWorkers','trashWorkers','boardWorkers','violationTurns'].some(k=>!Number.isInteger(p[k])||p[k]<0||p[k]>20)||p.classWorkers+p.trashWorkers+p.boardWorkers<6||p.classWorkers+p.trashWorkers+p.boardWorkers>20||typeof p.exemptOfficers!=='boolean'||!['balanced','last-group'].includes(p.fallback))throw Error('Cơ chế trực: tổng 6–20 người/ngày; mỗi nhiệm vụ và số lượt vi phạm từ 0–20.');}
     const ids = new Set();
     for (const r of c.rules) {
         if (!r.id || ids.has(r.id) || typeof r.name !== 'string' || !r.name.trim() || r.name.length > 150 || !['attendance', 'absence', 'learning', 'speaking', 'uniform', 'discipline', 'movement'].includes(r.category) || !Number.isInteger(r.points) || Math.abs(r.points) > 1000 || (r.limit !== undefined && (!Number.isInteger(r.limit) || r.limit < 1 || r.limit > 100)))
@@ -167,7 +170,7 @@ export function validateConfig(c: any): Config {
         throw Error('Số hàng, cột hoặc ngày trực chưa hợp lệ');
     if (!Array.isArray(c.conductBands) || !c.conductBands.length || c.conductBands.some((x: any) => !Number.isFinite(x.min) || !['Tốt', 'Khá', 'Đạt', 'Chưa đạt'].includes(x.level)))
         throw Error('Mốc đánh giá chưa hợp lệ');
-    return { ...c,dutyPolicyVersion:2, preferMaleTrash: !!c.preferMaleTrash, violationDuty: !!c.violationDuty };
+    return { ...c,dutyPolicyVersion:3, preferMaleTrash: !!c.preferMaleTrash, violationDuty: !!c.violationDuty };
 }
 
 export function studentLoginBase(name:string){const value=name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/g,'d').replace(/[^a-z0-9]/g,'');return (value.length>=3?value:'hs'+value).slice(0,36)}
