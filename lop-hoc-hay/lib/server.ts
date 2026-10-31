@@ -345,7 +345,8 @@ export async function action(b: Row) {
                 fail(400, 'Vẫn còn ghi nhận chưa được duyệt');
             const sn = snapshot(gs, sts, es, config);
             add(db.insert(t.periods).values({ id: uid(), classId, week: w, status: 'locked', snapshot: JSON.stringify(sn), createdAt: now() }));
-            for (const d of dutyPlan(sn, w, config))
+            const previousDuties=await db.select().from(t.duties).where(eq(t.duties.classId,classId));
+            for (const d of dutyPlan(sn, w, config, previousDuties))
                 add(db.insert(t.duties).values({ id: uid(), classId, ...d } as any).onConflictDoNothing());
             break;
         }
