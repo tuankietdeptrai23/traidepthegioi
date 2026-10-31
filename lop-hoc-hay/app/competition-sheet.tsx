@@ -3,7 +3,7 @@ import {useEffect,useState} from 'react';
 import {Table2,SquarePen,Save,LockKeyhole,CheckCircle2,Info} from 'lucide-react';
 import {canReport,ruleScore,speakingKpiLabel,classSubjects,needsLearningSubject,type Row,type Rule} from '@/lib/domain';
 
-export default function CompetitionSheet({d,week,save,busy}:any){
+export default function CompetitionSheet({d,week,save,reorderRules,busy}:any){
  const roles:string[]=d.roles||[];
  const own=d.students.find((s:Row)=>s.id===d.ownId);
  const editor=d.teacher||roles.length>0;
@@ -14,6 +14,8 @@ export default function CompetitionSheet({d,week,save,busy}:any){
  const [draft,setDraft]=useState<Row>({});
  const [subject,setSubject]=useState('');
  const [saving,setSaving]=useState(false);
+ const [moving,setMoving]=useState(false);
+ const [dragRule,setDragRule]=useState('');
  const [error,setError]=useState('');
  const [message,setMessage]=useState('');
  useEffect(()=>{setDraft({});setError('');setMessage('')},[week]);
@@ -75,6 +77,16 @@ export default function CompetitionSheet({d,week,save,busy}:any){
      setDraft({});setMessage('Đã lưu bảng. Gửi báo cáo tổ để giáo viên duyệt.');
    }catch(e){setError((e as Error).message)}finally{setSaving(false)}
  }
+ async function moveRule(id:string,position:number){
+   if(!d.teacher||busy||moving||!reorderRules)return;
+   if(changes.length){setError('Hãy lưu các ô đã sửa trước khi thay đổi thứ tự cột.');return}
+   const ordered=[...rules],from=ordered.findIndex(r=>r.id===id);
+   if(from<0||position<0||position>=ordered.length||position===from)return;
+   const [item]=ordered.splice(from,1);ordered.splice(position,0,item);
+   setMoving(true);setError('');
+   try{await reorderRules(ordered);setMessage('Đã lưu thứ tự cột mới cho cả lớp.')}
+   catch(e){setError((e as Error).message)}finally{setMoving(false);setDragRule('')}
+ }
  const renderScore=(s:Row)=>mode==='edit'?preview(s):s.score;
  return <section className="card section excel-section" id="competition-sheet">
   <div className="section-head"><div><h3><Table2 size={18}/>Bảng thi đua tổ</h3><p>Nhập số lần theo từng quy tắc. Trên điện thoại, chọn một quy tắc để nhập cho cả tổ, không phải kéo bảng ngang.</p></div>
@@ -88,6 +100,7 @@ export default function CompetitionSheet({d,week,save,busy}:any){
   {mode==='edit'&&!editable&&<div className="sheet-hint"><Info size={16}/>{locked?'Tuần đã chốt, bảng chỉ được xem.':'Tổ đã gửi báo cáo. Giáo viên cần trả lại báo cáo trước khi sửa.'}</div>}
   {error&&<div className="error sheet-message">{error}</div>}
   {message&&<div className="info sheet-message"><CheckCircle2 size={16}/>{message}</div>}
+  {d.teacher&&<div className="excel-order-bar"><span><Table2 size={15}/>Sắp xếp cột theo ý muốn: kéo tiêu đề trên máy tính, hoặc chọn quy tắc và vị trí bất kỳ.</span><label>Quy tắc<select aria-label="Quy tắc cần di chuyển" value={selected?.id||''} onChange={e=>setSelectedRuleId(e.target.value)}>{rules.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></label><label>Chuyển tới<select aria-label="Chuyển quy tắc đến vị trí" disabled={moving||busy} value={selected?rules.findIndex(r=>r.id===selected.id):0} onChange={e=>{if(selected)void moveRule(selected.id,Number(e.target.value))}}>{rules.map((r,i)=><option key={r.id} value={i}>Cột {i+1}</option>)}</select></label></div>}
   {selected&&<div className="mobile-sheet-filter"><label htmlFor="mobile-rule-select">Chọn quy tắc đang nhập</label><select id="mobile-rule-select" value={selected.id} onChange={e=>setSelectedRuleId(e.target.value)}>{rules.map((r:Rule)=><option value={r.id} key={r.id}>{r.name}</option>)}</select><small>{needsLearningSubject(selected)&&!subject?'Chọn môn học ở phía trên trước khi nhập điểm thuộc bài / không thuộc bài.':selected.kind==='speaking-total'?'Nhập tổng số lần phát biểu trong cả tuần. Để trống nếu chưa ghi nhận; nhập 0 nếu thực sự không phát biểu.':'Chỉ hiện một cột để dễ thao tác. Đổi quy tắc không làm mất ô chưa lưu.'}</small></div>}
   {groups.map((g,gi)=>{
    const rows:Row[]=sheet.rows.filter((s:Row)=>s.groupId===g.id);
@@ -96,7 +109,7 @@ export default function CompetitionSheet({d,week,save,busy}:any){
     <div className="excel-scroll" role="region" aria-label={'Bảng thi đua '+g.name} tabIndex={0}>
      <table className="excel-table">
       <thead><tr className="excel-letters"><th>№</th><th>A</th>{rules.map((r:Rule,i:number)=><th key={r.id}>{i+2}</th>)}<th>Σ</th><th>✓</th></tr>
-       <tr><th>STT</th><th className="student-column">Học sinh</th>{rules.map(r=><th key={r.id} className={r.kind==='speaking-total'?'kpi-col':r.points>=0?'plus-col':'minus-col'} title={r.name}><span>{r.name}</span><small>{r.kind==='speaking-total'?'Theo mốc KPI':(r.points>0?'+':'')+r.points+' đ/lần'}</small></th>)}<th className="total-column">Tạm tính</th><th className="total-column">Đã duyệt</th></tr>
+       <tr><th>STT</th><th className="student-column">Học sinh</th>{rules.map(r=><th key={r.id} draggable={!!d.teacher&&!moving} onDragStart={e=>{setDragRule(r.id);e.dataTransfer.setData('text/plain',r.id);e.dataTransfer.effectAllowed='move'}} onDragEnd={()=>setDragRule('')} onDragOver={e=>{if(d.teacher)e.preventDefault()}} onDrop={e=>{e.preventDefault();const source=e.dataTransfer.getData('text/plain')||dragRule;void moveRule(source,rules.findIndex(x=>x.id===r.id))}} className={(r.kind==='speaking-total'?'kpi-col':r.points>=0?'plus-col':'minus-col')+(dragRule===r.id?' rule-being-dragged':'')} title={d.teacher?'Kéo để di chuyển: '+r.name:r.name}><span>{r.name}</span><small>{r.kind==='speaking-total'?'Theo mốc KPI':(r.points>0?'+':'')+r.points+' đ/lần'}</small></th>)}<th className="total-column">Tạm tính</th><th className="total-column">Đã duyệt</th></tr>
       </thead><tbody>{rows.map((s,i)=><tr key={s.id}><td>{i+1}</td><td className="student-column"><b>{s.name}</b></td>{rules.map(r=>{
        const v=inputValue(s,r), delta=r.kind==='speaking-total'&&v!==''?ruleScore(r,Number(v)):Number(v||0)*r.points;
        return <td key={r.id} className={(delta>0?'has-plus':delta<0?'has-minus':'')+(draft[key(s.id,r.id)]!==undefined?' changed':'')}>{cell(s,r)}</td>
