@@ -232,8 +232,8 @@ await test('Treasurer creates collection, records partial receipts, prevents exc
  await denied(()=>send('recordFundCollections',{collectionId:c.id,date:'2026-11-04',payments:[{studentId:s2.id,amount:1}]}),409);
 });
 await test('Treasurer can independently request collections, collect money and correct the ledger',async()=>{
-  sqlite.prepare('UPDATE students SET roles=? WHERE id=?').run(JSON.stringify(['treasurer']),s4.id);
-  as('s4@example.com');
+  sqlite.prepare('UPDATE students SET roles=? WHERE id=?').run(JSON.stringify(['treasurer']),s2.id);
+  as('s2@example.com');
   await send('createFundCollection',{title:'Quỹ trực nhật',description:'Giấy lau bảng',amount:20000,dueDate:'2026-12-01'});
   let d=(await state(classId)).detail;
   const c=d.fundCollections.find(x=>x.title==='Quỹ trực nhật');
@@ -246,7 +246,7 @@ await test('Treasurer can independently request collections, collect money and c
   const receipt=d.fundCollections.find(x=>x.id===c.id).payments.find(x=>x.studentId===s1.id);
   await send('reverseFund',{id:receipt.id,reason:'Nhập nhầm người'});
   assert.equal((await state(classId)).detail.fundCollections.find(x=>x.id===c.id).paid,0);
-  as('s2@example.com');await denied(()=>send('closeFundCollection',{id:c.id,status:'closed'}),403);
+  as('s1@example.com');await denied(()=>send('closeFundCollection',{id:c.id,status:'closed'}),403);
 });
 await test('Duty planner does not duplicate teacher assignments or exceed daily task quota',async()=>{
  const config={...structuredClone(domain.defaultConfig),timetable:[{weekday:1,subjects:['Toán']}],lastDutyDays:1};
