@@ -95,3 +95,170 @@
 }
 
 @media (max-width:700px){.rule-delete{grid-column:3;grid-row:1}}
+
+
+/* Immersive study room: independent of the class dashboard width */
+.meeting-shell{position:fixed;inset:0;z-index:4000;display:flex;flex-direction:column;overflow:hidden;background:#111a20;color:#edf4f8;font-family:inherit;isolation:isolate}
+.meeting-shell *{box-sizing:border-box}
+.meeting-header{height:75px;flex:0 0 75px;background:#18232c;border-bottom:1px solid #ffffff18;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:10px 24px}
+.meeting-heading{display:flex;align-items:center;gap:13px;min-width:0}
+.meeting-icon{width:42px;height:42px;flex-shrink:0;display:grid;place-items:center;border-radius:13px;background:#385f5e;color:#e4f5f4}
+.meeting-heading>div:last-child{min-width:0}
+.meeting-kicker{display:flex;align-items:center;gap:9px;font-size:9px;letter-spacing:1.4px;color:#a4bcc1;font-weight:650}
+.meeting-kicker i{width:7px;height:7px;border-radius:50%;background:#5fd6a5;box-shadow:0 0 9px #5fd6a5}
+.meeting-heading h2{margin:3px 0 0;color:#f7fafc;font-size:20px;max-width:min(60vw,640px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.meeting-heading small{display:block;color:#90a4b0;font-size:11px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
+.meeting-header-actions{display:flex;align-items:center;gap:12px;flex-shrink:0}
+.meeting-duration,.meeting-count{display:inline-flex;align-items:center;gap:6px;color:#cbd8de;font-size:12px;font-variant-numeric:tabular-nums}
+.meeting-icon-button{display:grid;place-items:center;width:36px;height:36px;border:1px solid #ffffff22;border-radius:10px;background:#ffffff0b;color:#f4f8f9;cursor:pointer}
+.meeting-icon-button:hover{background:#ffffff20}
+.meeting-header-leave,.meeting-end{background:#a73546;border:1px solid #c15163;border-radius:10px;color:#fff;display:inline-flex;align-items:center;gap:8px;padding:10px 15px;font-size:12px;font-weight:650;cursor:pointer}
+.meeting-header-leave:hover,.meeting-end:hover{background:#c14356}
+.meeting-body{display:flex;flex:1;min-height:0;overflow:hidden}
+.meeting-main{display:flex;flex-direction:column;flex:1;min-width:0;min-height:0;padding:14px 18px 11px;gap:12px;position:relative}
+.meeting-viewbar{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:38px}
+.meeting-layout-switch{display:flex;align-items:center;gap:5px;background:#222f38;border-radius:10px;padding:4px}
+.meeting-layout-switch button{background:transparent;border:0;border-radius:7px;padding:7px 11px;color:#adbec5;display:flex;align-items:center;gap:7px;font-size:11px;white-space:nowrap;cursor:pointer}
+.meeting-layout-switch button.active{background:#405663;color:#fff}
+.meeting-layout-switch button:disabled{opacity:.35;cursor:default}
+.meeting-presenter{display:flex;align-items:center;gap:7px;color:#bdd0d9;font-size:11px;min-width:0}
+.meeting-presenter select{color:#f4fbfc;background:#2a3b48;border:1px solid #54707a;border-radius:7px;max-width:210px;min-width:0;padding:7px}
+.meeting-zoom{display:flex;align-items:center;gap:5px;color:#cbdadf;margin-left:auto}
+.meeting-zoom button{width:30px;height:30px;border-radius:7px;background:#293b46;color:#e4eef2;border:1px solid #ffffff25;display:grid;place-items:center;cursor:pointer}
+.meeting-zoom button:disabled{opacity:.4}
+.meeting-zoom input[type=range]{width:92px;accent-color:#7ab7ab}
+.meeting-zoom strong{font-size:10px;min-width:39px;text-align:center;font-variant-numeric:tabular-nums}
+.meeting-stage{flex:1;min-height:160px;position:relative;overflow:hidden;border-radius:15px;background:#090e12;display:flex;align-items:center;justify-content:center;isolation:isolate}
+.meeting-stage.zoomed{cursor:grab;touch-action:none}
+.meeting-stage.zoomed:active{cursor:grabbing}
+.meeting-stage-media{position:absolute;inset:0;width:100%;height:100%;display:flex;align-items:center;justify-content:center;transform-origin:center center;will-change:transform}
+.meeting-stage-media video{display:block;width:100%;height:100%;object-fit:contain;background:#090e12}
+.meeting-stage-caption{position:absolute;left:18px;bottom:14px;display:flex;align-items:center;gap:8px;padding:9px 13px;border:1px solid #ffffff24;background:#070c10bc;backdrop-filter:blur(7px);border-radius:9px;color:#e9f3f7;font-size:12px;pointer-events:none}
+.meeting-stage-caption b{font-weight:650}
+.meeting-pan-hint{position:absolute;top:12px;left:12px;background:#15242dd9;color:#d8e6ea;padding:7px 11px;border-radius:7px;font-size:11px;pointer-events:none}
+.meeting-empty{display:flex;flex-direction:column;align-items:center;gap:12px;padding:30px;text-align:center;max-width:520px}
+.meeting-empty>span{border-radius:23px;background:#1e3538;color:#83c9bb;display:grid;place-items:center;width:100px;height:100px}
+.meeting-empty h3{font-size:23px;color:#f5fafb;margin:0}
+.meeting-empty p{color:#9cb4bc;font-size:13px;line-height:1.8}
+.meeting-gallery{flex:1;min-height:0;overflow:auto;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-auto-rows:minmax(130px,1fr);gap:12px}
+.meeting-gallery-person{position:relative;overflow:hidden;background:#23313b;border:1px solid #42535d;border-radius:12px;min-width:0;min-height:0}
+.meeting-gallery-video{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}
+.meeting-gallery-video video{height:100%;width:100%;object-fit:contain}
+.meeting-gallery-video .study-avatar{width:72px;height:72px;font-size:30px}
+.meeting-gallery-label{position:absolute;bottom:12px;left:12px;background:#0b151dcc;color:#f7f9fc;font-size:12px;border-radius:8px;padding:6px 10px;max-width:75%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.meeting-gallery-person>button{position:absolute;top:10px;right:10px;width:32px;height:32px;border-radius:7px;background:#0b151dba;color:white;display:grid;place-items:center;border:1px solid #ffffff36;cursor:pointer}
+.meeting-participants-bar{display:flex;flex:0 0 auto;max-height:154px;gap:10px;overflow-x:auto;overflow-y:hidden;scrollbar-width:thin;padding:1px 2px 6px;scroll-snap-type:x proximity}
+.meeting-participant{position:relative;flex:0 0 145px;min-width:0;background:#26333d;border:1px solid #40505b;border-radius:11px;padding:5px;scroll-snap-align:start}
+.meeting-participant.selected{border-color:#81bdac;box-shadow:0 0 0 1px #81bdac}
+.meeting-participant-media{height:91px;background:#121b21;border-radius:8px;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
+.meeting-participant-media video{width:100%;height:100%;object-fit:cover}
+.meeting-participant-media audio{display:none}
+.meeting-participant-caption{display:flex;align-items:center;justify-content:space-between;gap:5px;margin:6px 3px 2px;color:#e5ecef}
+.meeting-participant-caption b{font-size:10px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.meeting-participant-caption svg{flex-shrink:0;color:#9bb5c2}
+.meeting-participant-media .study-avatar{width:50px;height:50px;font-size:23px}
+.meeting-hand{position:absolute;top:7px;left:8px;background:#e1ac51;color:#161c22;padding:3px;border-radius:7px;font-size:14px}
+.meeting-pin{position:absolute;top:5px;right:5px;border:0;border-radius:6px;background:#111b22b9;color:#fff;display:grid;place-items:center;width:25px;height:25px;opacity:0;cursor:pointer}
+.meeting-participant:hover .meeting-pin,.meeting-pin:focus-visible{opacity:1}
+.meeting-waiting{font-size:12px;color:#9fb3bd;padding:12px}
+.meeting-sidebar{display:none;flex:0 0 386px;min-width:0;min-height:0;border-left:1px solid #3b4852;background:#f5f7f9;color:#263840;flex-direction:column}
+.meeting-sidebar.open{display:flex}
+.meeting-sidebar-head{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:15px 18px;background:white;border-bottom:1px solid #e2e7eb}
+.meeting-sidebar-head b{display:block;font-size:14px}
+.meeting-sidebar-head small{font-size:10px;color:#81909c}
+.meeting-sidebar-head button{display:grid;place-items:center;border:0;background:#edf3f5;color:#596f7b;border-radius:8px;width:34px;height:34px;cursor:pointer}
+.meeting-sidebar-tabs{display:flex;gap:3px;padding:9px 10px;background:white;border-bottom:1px solid #e3e8ed}
+.meeting-sidebar-tabs button{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px;border:0;border-radius:8px;background:none;color:#738896;padding:8px 2px;font-size:9px;cursor:pointer}
+.meeting-sidebar-tabs button.active{background:#e4f2ed;color:#386958}
+.meeting-sidebar-tabs button small{font-size:9px}
+.meeting-sidebar-content{flex:1;min-height:0;display:flex;flex-direction:column;overflow:auto}
+.meeting-sidebar-content>.study-chat{display:flex;flex:1;min-height:0;flex-direction:column;margin:0;padding:0;border:0;border-radius:0}
+.meeting-sidebar-content .study-chat-messages{min-height:0;flex:1;overflow-y:auto;padding:16px}
+.meeting-sidebar-content .study-chat form{margin:auto 12px 12px;padding:6px;border:1px solid #d4e0e6;border-radius:11px;background:white;display:flex;gap:6px}
+.meeting-sidebar-content .study-chat form input{min-width:0;flex:1}
+.meeting-sidebar-content .study-chat form button{flex:0 0 auto}
+.meeting-sidebar-content .meeting-tool-area{min-height:0;overflow:auto;padding:12px}
+.meeting-sidebar-content .study-whiteboard,.meeting-sidebar-content .study-calculator{max-width:none}
+.meeting-footer{flex:0 0 auto;background:#18242c;border-top:1px solid #ffffff18;padding:12px 20px 9px}
+.meeting-controls{display:flex;justify-content:center;align-items:center;gap:9px;flex-wrap:wrap}
+.meeting-controls>button{display:flex;align-items:center;justify-content:center;gap:5px;min-height:54px;min-width:95px;padding:8px 12px;flex-direction:column;border-radius:10px;border:1px solid #ffffff17;background:#25343e;color:#e6eff2;font-size:10px;cursor:pointer}
+.meeting-controls>button:hover{background:#344851}
+.meeting-controls>button.enabled{background:#264d4b;color:#9ee6d0;border-color:#3f7971}
+.meeting-controls>button.muted{background:#53333d;color:#f5c4c9;border-color:#72434b}
+.meeting-controls>button.sharing{background:#234e72;border-color:#3f80a6;color:#d7edff}
+.meeting-controls>button:disabled{opacity:.4;cursor:not-allowed}
+.meeting-footer-options{display:flex;gap:17px;align-items:center;justify-content:center;margin-top:8px;color:#a4b8bf;font-size:10px}
+.meeting-footer-options label{display:flex;align-items:center;gap:7px;cursor:pointer}
+.meeting-footer-options input{accent-color:#6ab6ab}
+.meeting-end{padding:6px 11px;font-size:10px;margin-left:auto}
+.meeting-toast{position:absolute;top:58px;left:24px;right:24px;max-width:800px;margin:auto;z-index:10;padding:10px 14px;border-radius:9px;border:1px solid #40786c;background:#1f473be8;color:#dff4ec;font-size:12px;display:flex;justify-content:space-between;align-items:center;gap:10px;box-shadow:0 7px 20px #0006}
+.meeting-toast.error{border-color:#874957;background:#492c37f0;color:#ffe3e8}
+.meeting-toast button{border:0;background:none;color:inherit;font-size:20px;cursor:pointer}
+.subject-picker{min-width:170px;max-width:230px;font-size:12px!important}
+@media(max-width:1150px){
+ .meeting-sidebar{flex-basis:340px}
+ .meeting-heading h2{max-width:40vw}
+ .meeting-participant{flex-basis:125px}
+ .meeting-participant-media{height:75px}
+ .meeting-controls>button{min-width:79px;padding:7px 9px}
+}
+@media(max-width:700px){
+ .meeting-header{height:57px;flex-basis:57px;padding:6px 11px}
+ .meeting-icon{width:34px;height:34px}
+ .meeting-icon svg{width:17px}
+ .meeting-heading{gap:7px}
+ .meeting-kicker{font-size:7px;letter-spacing:.6px}
+ .meeting-heading h2{font-size:13px;max-width:38vw}
+ .meeting-heading small{display:none}
+ .meeting-header-actions{gap:5px}
+ .meeting-duration{font-size:10px}
+ .meeting-count{display:none}
+ .meeting-icon-button{width:30px;height:30px}
+ .meeting-header-leave{padding:7px;font-size:0;gap:0}
+ .meeting-header-leave svg{width:17px}
+ .meeting-main{padding:7px;gap:7px}
+ .meeting-viewbar{flex-wrap:wrap;gap:6px;min-height:32px}
+ .meeting-layout-switch button{padding:6px 7px;font-size:9px}
+ .meeting-layout-switch svg{width:13px}
+ .meeting-presenter{width:100%;order:3}
+ .meeting-presenter select{flex:1;max-width:none}
+ .meeting-zoom{margin-left:0;gap:2px}
+ .meeting-zoom input{width:50px}
+ .meeting-zoom strong{font-size:9px;min-width:32px}
+ .meeting-zoom button{width:27px;height:27px}
+ .meeting-stage{min-height:140px;border-radius:9px}
+ .meeting-stage-caption{left:7px;bottom:8px;padding:6px;font-size:9px}
+ .meeting-gallery{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+ .meeting-participants-bar{max-height:109px;gap:6px}
+ .meeting-participant{flex-basis:95px;padding:3px;border-radius:7px}
+ .meeting-participant-media{height:62px}
+ .meeting-participant-caption{margin:4px 2px;font-size:8px}
+ .meeting-participant-caption b{font-size:8px}
+ .meeting-pin{opacity:1}
+ .meeting-sidebar{position:absolute;z-index:15;right:0;top:57px;bottom:0;box-shadow:-8px 0 25px #0007;width:min(100%,420px);flex-basis:auto}
+ .meeting-footer{padding:7px 5px max(5px,env(safe-area-inset-bottom))}
+ .meeting-controls{gap:3px;flex-wrap:nowrap;justify-content:space-evenly}
+ .meeting-controls>button{flex:1 1 0;min-width:0;min-height:47px;padding:6px 2px;font-size:8px}
+ .meeting-controls>button svg{width:18px;height:18px}
+ .meeting-footer-options{margin-top:5px;flex-wrap:wrap;gap:5px;font-size:9px}
+ .meeting-footer-options .meeting-end{margin-left:0}
+ .subject-picker{max-width:none;min-width:0;width:100%}
+ .sheet-toolbar .subject-picker{grid-column:1/-1}
+}
+
+
+/* Saveable ordering directly in the scoring spreadsheet */
+.excel-order-bar{display:flex;align-items:end;gap:12px;flex-wrap:wrap;padding:11px 22px 16px;border-top:1px solid #e9efe3;border-bottom:1px solid #e5ecdf;background:#fafcf7}
+.excel-order-bar>span{display:flex;align-items:center;gap:9px;flex:1 1 250px;line-height:1.55;color:#6e835f;font-size:11px}
+.excel-order-bar>span svg{flex-shrink:0}
+.excel-order-bar label{display:flex;flex:0 1 210px;flex-direction:column;gap:5px;min-width:0;color:#6d815e;font-size:10px}
+.excel-order-bar select{min-width:0;width:100%;border:1px solid #c8d8c0;background:white;color:#426139;border-radius:8px;padding:10px;font-size:12px}
+.excel-table thead tr:nth-child(2) th[draggable=true]{cursor:grab;border-top:2px solid transparent}
+.excel-table thead tr:nth-child(2) th[draggable=true]:hover{border-top-color:#86a572}
+.excel-table thead tr:nth-child(2) th.rule-being-dragged{opacity:.5;border-top-color:#45684c}
+@media(max-width:700px){
+ .excel-order-bar{padding:12px;gap:8px;align-items:stretch}
+ .excel-order-bar>span{flex-basis:100%;font-size:11px}
+ .excel-order-bar label{flex:1 1 calc(50% - 6px);min-width:120px}
+ .excel-order-bar select{font-size:13px;min-height:42px}
+}
