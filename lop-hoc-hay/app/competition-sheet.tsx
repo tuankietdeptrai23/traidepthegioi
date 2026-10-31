@@ -56,7 +56,7 @@ export default function CompetitionSheet({d,week,save,busy}:any){
   <input aria-label={s.name+' - '+r.name} type="number" inputMode="numeric" min="0" max={r.limit||100}
       disabled={!editable||saving||busy} value={inputValue(s,r)} placeholder={r.kind==='speaking-total'?'Chưa nhập':'—'}
       onChange={e=>update(s,r,e.target.value)}/>:
-  <span>{r.kind==='speaking-total'&&!s.recorded?.[r.id]?'—':s.counts[r.id]||'—'}</span>;
+  <span>{r.kind==='speaking-total'?(s.recorded?.[r.id]?(s.counts[r.id]??0):'—'):(s.counts[r.id]||'—')}</span>;
  async function commit(){
    setSaving(true);setError('');setMessage('');
    try{
