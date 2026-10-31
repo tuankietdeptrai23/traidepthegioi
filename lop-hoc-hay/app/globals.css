@@ -262,3 +262,4 @@
  .excel-order-bar label{flex:1 1 calc(50% - 6px);min-width:120px}
  .excel-order-bar select{font-size:13px;min-height:42px}
 }
+.learning-log h3{display:flex;gap:8px;align-items:center}.learning-log-filters{display:flex;flex-wrap:wrap;gap:12px;padding:0 22px}.learning-log-filters label{flex:1 1 170px;min-width:0;font-size:11px;color:#75866e;display:flex;flex-direction:column;gap:8px}.learning-log-filters select{width:100%;padding:11px;border-radius:8px;border:1px solid #dbe4d4;background:#fff;color:#435e3a;font-size:12px}.learning-log-filters .search{min-height:40px}.learning-log-count{padding:8px 22px;color:#84947b;font-size:11px}@media(max-width:650px){.learning-log-filters{padding:0 12px;gap:8px}.learning-log-filters label{flex-basis:calc(50% - 8px)}.learning-log-filters label:last-child{flex-basis:100%}.learning-log-count{padding:8px 12px}}

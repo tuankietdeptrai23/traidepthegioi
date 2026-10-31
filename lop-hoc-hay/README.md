@@ -122,3 +122,12 @@ Trên màn hình nhỏ, **Bảng thi đua tổ** hiển thị từng học sinh 
 Trong **Cấu hình → Danh mục cộng / trừ điểm**, giáo viên có thể kéo thả quy tắc trên máy tính hoặc dùng mũi tên lên/xuống trên điện thoại để đổi thứ tự cột, sau đó lưu cấu hình. Nút **Bật KPI phát biểu** thay các quy tắc phát biểu cũ bằng một cột tổng phát biểu/tuần. Lịch sử tuần đã chốt không thay đổi.
 
 Mặc định KPI: từ **0 đến 3** lần ghi nhận trừ **5** điểm và đánh dấu vi phạm **Không đủ KPI**; từ **4 đến 7** lần không cộng/trừ; từ **8 đến 11** lần cộng **5** điểm; từ **12** lần cộng **10** điểm. Giáo viên được tự thay số lần tối thiểu, mức trừ, thêm/xóa các mốc cộng và số điểm. Một học sinh chỉ được **một mốc thưởng cao nhất**, không cộng dồn các mốc. Chưa nhập ô KPI sẽ không tự phạt; nhập số **0** sẽ ghi nhận không phát biểu và áp dụng mức trừ. Bảng nhập thay thế ghi nhận cũ cùng quy tắc, không cộng chồng. Điểm chỉ trở thành chính thức sau khi giáo viên duyệt báo cáo; tuần đã chốt bất biến.
+
+### Kiểm tra bổ sung sau PR #2
+
+- Giữ nguyên điểm kiểm tra `0` khi API nhận số, bắt buộc môn học cho ghi nhận học tập và có tra cứu điểm 0 / không thuộc bài theo môn, tên học sinh và trạng thái. Không tự coi mọi ghi nhận dưới 5 là điểm 0; dữ liệu cũ thiếu môn có bộ lọc riêng.
+- Lớp trưởng và lớp phó học tập được duyệt hoặc trả lại báo cáo đang chờ với lý do. Chốt tuần và sửa quy tắc vẫn thuộc giáo viên / admin.
+- Sắp xếp cột dùng API hoán vị ID, không ghi đè điểm hay quy tắc từ snapshot cũ. Tuần đã chốt giữ bố cục lịch sử. Có kéo thả trên máy tính và chọn vị trí bất kỳ trên điện thoại.
+- Phòng học toàn cửa sổ giữ chia sẻ màn hình, chế độ thư viện, bảng công cụ và zoom 100–300% theo bước 25%.
+
+Kiểm tra: 64 kiểm tra tích hợp và 7 kiểm tra nhập danh sách; TypeScript và build production. UI được kiểm tra trên dữ liệu giả (gồm khung điện thoại 390 px), nguồn màn hình minh họa, duyệt/trả báo cáo và lưu theo từng môn. Cuộc gọi media thực giữa hai thiết bị, chia sẻ âm thanh và TURN chưa được xác minh trong môi trường trình duyệt kiểm thử. Không thay đổi schema/migration hay dữ liệu production trong lượt nâng cấp này.

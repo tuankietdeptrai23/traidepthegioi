@@ -52,7 +52,7 @@ export function StudyMeeting({session,user,onLeave}:{session:Row;user:Row;onLeav
  const focused=!!presenter||layout==='speaker';
  const stagePeer=presenter||pinned;
  const stageStream=presenter?(presenter.id===session.peerId?c.localScreen:c.streams[presenter.id]?.[2]):(pinned?.id===session.peerId?c.localCam:c.streams[pinned?.id]?.[1]);
- const adjust=(value:number)=>{setZoom(Math.min(3,Math.max(1,Math.round(value*10)/10)));setPan({x:0,y:0})};
+ const adjust=(value:number)=>{setZoom(Math.min(3,Math.max(1,Math.round(value*4)/4)));setPan({x:0,y:0})};
  const tabs=[['chat','Trò chuyện',MessageCircle],['board','Bảng trắng',PenLine],['calc','Máy tính',Calculator],['timer','Tập trung',Clock]] as const;
  return <div ref={shell} className={'meeting-shell'+(panelOpen?' has-panel':'')} role="region" aria-label={'Phòng học trực tuyến '+c.room.title}>
    <header className="meeting-header">
@@ -80,7 +80,7 @@ export function StudyMeeting({session,user,onLeave}:{session:Row;user:Row;onLeav
      <div className="meeting-participants-bar" aria-label="Người tham gia cuộc gọi">{c.members.map(p=><div className={'meeting-participant'+((!presenter&&pinned?.id===p.id)?' selected':'')} key={p.id}>
        <div className="meeting-participant-media">{p.camera?<Media video muted={p.id===session.peerId} stream={p.id===session.peerId?c.localCam:c.streams[p.id]?.[1]} label={'Camera '+p.name}/>:<StudyAvatar name={p.name} avatar={p.avatar}/>}
         {p.id!==session.peerId&&<><Media stream={c.streams[p.id]?.[0]} label={'Âm thanh của '+p.name}/><Media stream={c.streams[p.id]?.[3]} label={'Âm thanh chia sẻ của '+p.name}/></>}
-        {p.hand&&<span className="meeting-hand">✋</span>}
+        {!!p.hand&&<span className="meeting-hand">✋</span>}
         <button className="meeting-pin" aria-label={'Xem lớn '+p.name} title={'Ghim '+p.name} onClick={()=>{setPinnedId(p.id);setLayout('speaker')}}><Maximize2 size={14}/></button>
        </div><div className="meeting-participant-caption"><b>{p.name}{p.id===session.peerId?' (bạn)':''}</b>{p.mic?<Mic size={13}/>:<MicOff size={13}/>}</div></div>)}
        {!c.members.length&&<span className="meeting-waiting">Đang kết nối với các thành viên…</span>}

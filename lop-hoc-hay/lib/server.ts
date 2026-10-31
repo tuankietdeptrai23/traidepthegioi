@@ -153,6 +153,10 @@ export async function action(b: Row) {
             add(db.insert(t.groups).values({ id: uid(), classId, name }));
             break;
         }
+        case 'reorderRules': {
+            needTeacher();const ids=b.ruleIds;if(!Array.isArray(ids)||ids.length!==config.rules.length||new Set(ids).size!==ids.length||ids.some((id:any)=>typeof id!=='string'||!config.rules.some(r=>r.id===id)))fail(400,'Thứ tự phải chứa đủ các quy tắc hiện tại, không trùng hoặc thêm quy tắc.');
+            const rules=ids.map((id:string)=>config.rules.find(r=>r.id===id)!);add(db.update(t.classes).set({config:JSON.stringify({...config,rules})}).where(eq(t.classes.id,classId)));break;
+        }
         case 'saveConfig': {
             needTeacher();
             let checked: Config;
@@ -268,7 +272,8 @@ export async function action(b: Row) {
                 fail(400, 'Mỗi học sinh chỉ áp dụng một mốc phát biểu mỗi tuần');
             if (r.id.startsWith('grade') && count !== 1)
                 fail(400, 'Mỗi điểm kiểm tra cần một ghi nhận riêng');
-            const grade = b.grade ? String(Number(b.grade)) : r.id === 'grade8' ? '8' : r.id === 'grade9' ? '9' : r.id === 'grade10' ? '10' : '';
+            const hasGrade=b.grade!==null&&b.grade!==undefined&&String(b.grade).trim()!=='';if(hasGrade&&(!needsLearningSubject(r)||!['string','number'].includes(typeof b.grade)))fail(400,'Chọn quy tắc học tập khi nhập điểm kiểm tra.');
+            const grade = hasGrade ? String(Number(b.grade)) : r.id === 'grade8' ? '8' : r.id === 'grade9' ? '9' : r.id === 'grade10' ? '10' : '';
             if (['grade8', 'grade9', 'grade10'].includes(r.id) && grade !== r.id.slice(5))
                 fail(400, 'Điểm kiểm tra phải khớp quy tắc đã chọn');
             if (grade && (!Number.isFinite(Number(grade)) || Number(grade) < 0 || Number(grade) > 10))
