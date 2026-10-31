@@ -107,20 +107,21 @@ export function dutyPlan(snap: Row, week: string, config: Config, existing: Row[
     const weekSeed=Math.floor(Date.parse(week+'T00:00:00Z')/604800000);
     const counts=new Map<string,number>();
     let previousTask=new Map<string,string>();
+    const lastDaysUsed=new Set<string>();
     for(let round=0;round<12;round++){
         let made=0;
         for(const day of days){
             const date=dayPlus(week,7+7*round+day.weekday-1);
-            const used=new Set<string>(existing.filter(x=>x.date===date).map(x=>x.studentId));
-            const slots=dutyTasks.flatMap(t=>Array.from({length:t.limit},()=>t.task));
+            const reserved=existing.filter(x=>x.date===date);
+            const used=new Set<string>(reserved.map(x=>x.studentId));
+            const slots=dutyTasks.flatMap(t=>Array.from({length:Math.max(0,t.limit-reserved.filter(r=>r.task===t.task).length)},()=>t.task));
             const available=eligible.filter(s=>!used.has(s.id));
             if(!available.length)continue;
             for(let slot=0;slot<slots.length;slot++){
                 const task=slots[slot];
                 const owed=eligible.filter(s=>!used.has(s.id)&&(balances.get(s.id)||0)>0);
-                const backup=round===0&&day.weekday<=6&&lastGroupDays>0&&
-                    days.slice(0,lastGroupDays).some(d=>d.weekday===day.weekday)?
-                    lastGroup.filter(s=>!used.has(s.id)):[];
+                const mayUseLast=round===0&&lastGroupDays>0&&(lastDaysUsed.has(date)||lastDaysUsed.size<lastGroupDays);
+                const backup=mayUseLast?lastGroup.filter(s=>!used.has(s.id)):[];
                 const pool=owed.length?owed:backup;
                 if(!pool.length)continue;
                 const fair=pool.slice().sort((a,b)=>{
@@ -132,6 +133,7 @@ export function dutyPlan(snap: Row, week: string, config: Config, existing: Row[
                         ((eligible.findIndex(x=>x.id===b.id)+weekSeed)%eligible.length);
                 });
                 const person=fair[0];used.add(person.id);made++;
+                if(!owed.length)lastDaysUsed.add(date);
                 counts.set(person.id,(counts.get(person.id)||0)+1);previousTask.set(person.id,task);
                 const violation=(balances.get(person.id)||0)>0;
                 if(violation)balances.set(person.id,(balances.get(person.id)||0)-1);
