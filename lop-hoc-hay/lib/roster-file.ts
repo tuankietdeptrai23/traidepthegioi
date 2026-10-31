@@ -112,7 +112,7 @@ async function zipTexts(file: File): Promise<Map<string, () => Promise<string>>>
     const offset = view.getUint32(cursor + 42, true);
     if (cursor + 46 + nameLen > data.length) throw Error('Cấu trúc file Excel bị lỗi.');
     const name = decoder.decode(data.subarray(cursor + 46, cursor + 46 + nameLen));
-    if (name.startsWith('xl/') && name.endsWith('.xml')) {
+    if (name.startsWith('xl/') && (name.endsWith('.xml') || name.endsWith('.rels'))) {
       if (uncompressed > 6 * 1024 * 1024 || compressed > 8 * 1024 * 1024) throw Error('Trang tính quá lớn để nhập.');
       if (offset + 30 > data.length || view.getUint32(offset, true) !== 0x04034b50) throw Error('File Excel bị hỏng.');
       const start = offset + 30 + view.getUint16(offset + 26, true) + view.getUint16(offset + 28, true);
@@ -181,6 +181,7 @@ function sheetGrid(doc: Document, shared: string[]): string[][] {
   return result;
 }
 export async function rosterFromFile(file: File): Promise<RosterFileResult> {
+  if (file.size > 8 * 1024 * 1024) throw Error('File quá lớn (tối đa 8 MB).');
   const ext = file.name.toLowerCase();
   if (ext.endsWith('.csv') || ext.endsWith('.tsv') || ext.endsWith('.txt')) {
     const rows = rosterFromText(await file.text());
