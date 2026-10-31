@@ -245,3 +245,20 @@
  .subject-picker{max-width:none;min-width:0;width:100%}
  .sheet-toolbar .subject-picker{grid-column:1/-1}
 }
+
+
+/* Saveable ordering directly in the scoring spreadsheet */
+.excel-order-bar{display:flex;align-items:end;gap:12px;flex-wrap:wrap;padding:11px 22px 16px;border-top:1px solid #e9efe3;border-bottom:1px solid #e5ecdf;background:#fafcf7}
+.excel-order-bar>span{display:flex;align-items:center;gap:9px;flex:1 1 250px;line-height:1.55;color:#6e835f;font-size:11px}
+.excel-order-bar>span svg{flex-shrink:0}
+.excel-order-bar label{display:flex;flex:0 1 210px;flex-direction:column;gap:5px;min-width:0;color:#6d815e;font-size:10px}
+.excel-order-bar select{min-width:0;width:100%;border:1px solid #c8d8c0;background:white;color:#426139;border-radius:8px;padding:10px;font-size:12px}
+.excel-table thead tr:nth-child(2) th[draggable=true]{cursor:grab;border-top:2px solid transparent}
+.excel-table thead tr:nth-child(2) th[draggable=true]:hover{border-top-color:#86a572}
+.excel-table thead tr:nth-child(2) th.rule-being-dragged{opacity:.5;border-top-color:#45684c}
+@media(max-width:700px){
+ .excel-order-bar{padding:12px;gap:8px;align-items:stretch}
+ .excel-order-bar>span{flex-basis:100%;font-size:11px}
+ .excel-order-bar label{flex:1 1 calc(50% - 6px);min-width:120px}
+ .excel-order-bar select{font-size:13px;min-height:42px}
+}
