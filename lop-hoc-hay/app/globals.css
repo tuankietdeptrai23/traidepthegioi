@@ -384,3 +384,7 @@
 .activity-filter-bar button{border:0;border-radius:7px;background:transparent;color:#7d8e7f;padding:9px 12px;font-size:11px;cursor:pointer}
 .activity-filter-bar button.active{background:white;color:#396952;box-shadow:0 2px 9px #1f39221c;font-weight:700}
 @media(max-width:760px){.activity-overview{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.activity-overview>div{padding:15px}.activity-overview b{font-size:21px}.activity-filter-bar button{font-size:10px;padding:8px}}
+
+.treasury-group-filter{max-width:150px;width:100%;min-width:90px;border:1px solid #dce6dc;border-radius:8px;padding:9px;background:white;font-size:11px;color:#597262}
+.treasury-section-heading>.btn{flex-shrink:0}
+@media(max-width:800px){.treasury-list-toolbar{flex-wrap:wrap}.treasury-group-filter{flex:1;max-width:none}.treasury-section-heading>.btn{font-size:11px}}
