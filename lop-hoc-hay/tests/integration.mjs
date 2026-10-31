@@ -162,7 +162,7 @@ await test('Study deputy and class leader may approve submitted reports but not 
   as('teacher@example.com');
   await send('submitReport',{week:'2026-12-07',groupId:g1.id});
   const rep=(await state(classId)).detail.reports.find(x=>x.week==='2026-12-07'&&x.groupId===g1.id);
-  as('s4@example.com');await denied(()=>send('reviewReport',{id:rep.id,status:'approved'}),403);
+  as('s3@example.com');await denied(()=>send('reviewReport',{id:rep.id,status:'approved'}),403);
   as('s2@example.com');await send('reviewReport',{id:rep.id,status:'approved'});
   assert.equal((await state(classId)).detail.reports.find(x=>x.id===rep.id).status,'approved');
   await denied(()=>send('lockWeek',{week:'2026-12-07'}),403);
