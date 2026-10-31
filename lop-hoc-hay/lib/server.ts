@@ -56,8 +56,8 @@ export async function state(classId?: string) {
     const c = await context(classId);
     const { teacher, own, roles } = c;
     const classFilter = (table: any) => eq(table.classId, classId);
-    const [groups, students, periods, entries, reports, grades, conduct, funds, activities, duties, notices, feedback, audit] = await Promise.all([
-        db.select().from(t.groups).where(classFilter(t.groups)), db.select().from(t.students).where(classFilter(t.students)), db.select().from(t.periods).where(classFilter(t.periods)), db.select().from(t.entries).where(classFilter(t.entries)), db.select().from(t.reports).where(classFilter(t.reports)), db.select().from(t.grades).where(classFilter(t.grades)), db.select().from(t.conduct).where(classFilter(t.conduct)), db.select().from(t.funds).where(classFilter(t.funds)), db.select().from(t.activities).where(classFilter(t.activities)), db.select().from(t.duties).where(classFilter(t.duties)), db.select().from(t.notices).where(classFilter(t.notices)), db.select().from(t.feedback).where(classFilter(t.feedback)), teacher ? db.select().from(t.audit).where(classFilter(t.audit)) : Promise.resolve([])
+    const [groups, students, periods, entries, reports, grades, conduct, funds, collections, activities, duties, notices, feedback, audit] = await Promise.all([
+        db.select().from(t.groups).where(classFilter(t.groups)), db.select().from(t.students).where(classFilter(t.students)), db.select().from(t.periods).where(classFilter(t.periods)), db.select().from(t.entries).where(classFilter(t.entries)), db.select().from(t.reports).where(classFilter(t.reports)), db.select().from(t.grades).where(classFilter(t.grades)), db.select().from(t.conduct).where(classFilter(t.conduct)), db.select().from(t.funds).where(classFilter(t.funds)), db.select().from(t.fundCollections).where(classFilter(t.fundCollections)), db.select().from(t.activities).where(classFilter(t.activities)), db.select().from(t.duties).where(classFilter(t.duties)), db.select().from(t.notices).where(classFilter(t.notices)), db.select().from(t.feedback).where(classFilter(t.feedback)), teacher ? db.select().from(t.audit).where(classFilter(t.audit)) : Promise.resolve([])
     ]);
     const visibleStudent = (s: Row) => teacher || s.id === own?.id || canReport(roles, own?.groupId || '', s.groupId);
     const ids = new Set(students.filter(visibleStudent).map(s => s.id));
@@ -66,7 +66,7 @@ export async function state(classId?: string) {
     const ranks = Object.fromEntries(weekly.map(w => { const p = periods.find(p => p.week === w && p.status === 'locked'); return [w, p ? parse<Row>(p.snapshot, {}).standings : snapshot(groups, students, entries.filter(e => e.week === w), c.config).standings]; }));
     const historyScores = Object.fromEntries(periods.filter(p => p.status === 'locked').map(p => { const sn = parse<Row>(p.snapshot, {}); return [p.week, (sn.students || []).filter((s: Row) => ids.has(s.id)).map((s: Row) => ({ id: s.id, name: s.name, groupId: s.groupId, score: s.score }))]; }));
     const sheets=Object.fromEntries(weekly.map(w=>{const locked=periods.find(p=>p.week===w&&p.status==='locked');const snap=locked?parse<Row>(locked.snapshot,{}):null;const rules=(snap?.config||c.config).rules;const roster=(snap?.students||students).filter((s:Row)=>s.active);const records=(snap?.entries||entries.filter(e=>e.week===w));return [w,{rules,base:(snap?.config||c.config).base,rows:roster.map((s:Row)=>{const editable=teacher||canReport(roles,own?.groupId||'',s.groupId);const seen=records.filter((e:Row)=>e.studentId===s.id&&e.groupId===s.groupId&&(e.status==='approved'||(editable&&e.status==='pending')));return {id:s.id,name:s.name,groupId:s.groupId,previewScore:(snap?s.score:c.config.base+seen.reduce((n:number,e:Row)=>n+e.delta,0)),subjectCounts:Object.fromEntries(seen.filter((e:Row)=>e.subject&&rules.some((r:Row)=>r.id===e.ruleId&&needsLearningSubject(r))).map((e:Row)=>[e.ruleId+'|'+e.subject,seen.filter((x:Row)=>x.ruleId===e.ruleId&&x.subject===e.subject).reduce((n:number,x:Row)=>n+x.count,0)])),counts:Object.fromEntries(rules.map((r:Row)=>[r.id,r.kind==='speaking-total'?(seen.find((e:Row)=>e.ruleId===r.id)?.count??0):seen.filter((e:Row)=>e.ruleId===r.id).reduce((n:number,e:Row)=>n+e.count,0)])),recorded:Object.fromEntries(rules.filter((r:Row)=>r.kind==='speaking-total').map((r:Row)=>[r.id,seen.some((e:Row)=>e.ruleId===r.id)])),score:snap?s.score:c.config.base+records.filter((e:Row)=>e.studentId===s.id&&e.status==='approved').reduce((n:number,e:Row)=>n+e.delta,0)}})}]}));
-    common.detail = { ...c.cls, config: c.config, teacher, ownId: own?.id, roles, groups, students: students.map(s => teacher ? s : ({ ...s, email: s.id === own?.id ? s.email : '', roles: s.roles })), periods: periods.map(p => ({ ...p, snapshot: undefined })), entries: entries.filter(e => ids.has(e.studentId)), reports: reports.map(r => teacher || canReport(roles, own?.groupId || '', r.groupId) ? r : { ...r, note: '', createdBy: '' }), grades: grades.filter(g => (teacher || g.studentId === own?.id) && (g.confirmed || g.createdBy === user.email)), conduct: conduct.filter(x => teacher || x.studentId === own?.id), fundSummary: {income: funds.filter(f=>f.status==='approved'&&f.type==='income').reduce((n,f)=>n+f.amount,0),expense:funds.filter(f=>f.status==='approved'&&f.type==='expense').reduce((n,f)=>n+f.amount,0)}, funds: funds.filter(f => teacher || roles.includes('treasurer') || (f.status === 'approved' && (!f.studentId || f.studentId === own?.id))).map(f => teacher || roles.includes('treasurer') ? f : { ...f, proof: '', createdBy: '' }), activities, duties, notices, feedback: feedback.filter(f => teacher || f.createdBy === user.email), audit, ranks, historyScores, sheets };
+    common.detail = { ...c.cls, config: c.config, teacher, ownId: own?.id, roles, groups, students: students.map(s => teacher ? s : ({ ...s, email: s.id === own?.id ? s.email : '', roles: s.roles })), periods: periods.map(p => ({ ...p, snapshot: undefined })), entries: entries.filter(e => ids.has(e.studentId)), reports: reports.map(r => teacher || canReport(roles, own?.groupId || '', r.groupId) ? r : { ...r, note: '', createdBy: '' }), grades: grades.filter(g => (teacher || g.studentId === own?.id) && (g.confirmed || g.createdBy === user.email)), conduct: conduct.filter(x => teacher || x.studentId === own?.id), fundCollections: collections.map(c=>({ ...c,paid:funds.filter(f=>f.collectionId===c.id&&f.status==='approved').reduce((n,f)=>n+(f.type==='income'?f.amount:-f.amount),0),payments: (teacher||roles.includes('treasurer')?funds.filter(f=>f.collectionId===c.id&&f.status==='approved'):funds.filter(f=>f.collectionId===c.id&&f.status==='approved'&&f.studentId===own?.id)).map(f=>({studentId:f.studentId,amount:f.amount,type:f.type,date:f.date,id:f.id}))})), fundSummary: {income: funds.filter(f=>f.status==='approved'&&f.type==='income').reduce((n,f)=>n+f.amount,0),expense:funds.filter(f=>f.status==='approved'&&f.type==='expense').reduce((n,f)=>n+f.amount,0)}, funds: funds.filter(f => teacher || roles.includes('treasurer') || (f.status === 'approved' && (!f.studentId || f.studentId === own?.id))).map(f => teacher || roles.includes('treasurer') ? f : { ...f, proof: '', createdBy: '' }), activities, duties, notices, feedback: feedback.filter(f => teacher || f.createdBy === user.email), audit, ranks, historyScores, sheets };
     return common;
 }
 export async function action(b: Row) {
@@ -396,35 +396,63 @@ export async function action(b: Row) {
             add(db.update(t.feedback).set({ response: str(b.response, 2000), status: 'resolved' }).where(eq(t.feedback.id, f.id)));
             break;
         }
+        case 'createFundCollection': {
+            if(!teacher&&!roles.includes('treasurer'))fail(403,'Chỉ thủ quỹ hoặc giáo viên tạo đợt thu.');
+            const title=str(b.title,160),description=String(b.description||'').trim().slice(0,1200);
+            const sum=amount(b.amount,1,100000000);
+            const dueDate=date(b.dueDate);
+            const id=uid();
+            add(db.insert(t.fundCollections).values({id,classId,title,description,amount:sum,dueDate,status:'open',createdBy:user.email,createdAt:now()}));
+            break;
+        }
+        case 'closeFundCollection': {
+            if(!teacher&&!roles.includes('treasurer'))fail(403,'Chỉ thủ quỹ hoặc giáo viên được chốt đợt thu.');
+            const item=await db.select().from(t.fundCollections).where(and(eq(t.fundCollections.id,str(b.id,100)),eq(t.fundCollections.classId,classId))).get();
+            if(!item)fail(404,'Không tìm thấy đợt thu');
+            if(!['open','closed'].includes(b.status))fail(400,'Trạng thái không hợp lệ');
+            add(db.update(t.fundCollections).set({status:b.status}).where(eq(t.fundCollections.id,item.id)));
+            break;
+        }
+        case 'recordFundCollections': {
+            if(!teacher&&!roles.includes('treasurer'))fail(403,'Chỉ thủ quỹ hoặc giáo viên được ghi nhận đã đóng.');
+            const item=await db.select().from(t.fundCollections).where(and(eq(t.fundCollections.id,str(b.collectionId,100)),eq(t.fundCollections.classId,classId))).get();
+            if(!item||item.status!=='open')fail(409,'Đợt thu đã đóng hoặc không tồn tại.');
+            if(!Array.isArray(b.payments)||!b.payments.length||b.payments.length>80)fail(400,'Chỉ nhập tối đa 80 khoản đóng mỗi lượt.');
+            const when=date(b.date);
+            const existing=await db.select().from(t.funds).where(and(eq(t.funds.classId,classId),eq(t.funds.collectionId,item.id),eq(t.funds.status,'approved')));
+            const paid=new Map<string,number>();
+            for(const f of existing){if(!f.studentId)continue;paid.set(f.studentId,(paid.get(f.studentId)||0)+(f.type==='income'?f.amount:-f.amount))}
+            for(const p of b.payments){
+                const learner=await student(p.studentId);
+                const money=amount(p.amount,1,100000000);
+                if((paid.get(learner.id)||0)+money>item.amount)fail(400,'Học sinh '+learner.name+' đã đủ tiền, không thể ghi vượt khoản cần thu.');
+                paid.set(learner.id,(paid.get(learner.id)||0)+money);
+                add(db.insert(t.funds).values({id:uid(),classId,type:'income',amount:money,studentId:learner.id,description:'Thu '+item.title,date:when,proof:'',status:'approved',createdBy:user.email,collectionId:item.id}));
+            }
+            break;
+        }
         case 'addFund': {
-            if (!teacher && !roles.includes('treasurer'))
-                fail(403, 'Chỉ thủ quỹ hoặc giáo viên được ghi thu chi');
-            if (!['income', 'expense'].includes(b.type))
-                fail(400, 'Loại giao dịch không hợp lệ');
-            if (b.studentId)
-                await student(b.studentId);
-            add(db.insert(t.funds).values({ id: uid(), classId, type: b.type, amount: amount(b.amount, 1), studentId: b.studentId || null, description: str(b.description, 500), date: date(b.date), proof: safeUrl(b.proof), status: teacher ? 'approved' : 'pending', createdBy: user.email }));
+            if(!teacher&&!roles.includes('treasurer'))fail(403,'Chỉ thủ quỹ hoặc giáo viên được ghi thu chi');
+            if(!['income','expense'].includes(b.type))fail(400,'Loại giao dịch không hợp lệ');
+            if(b.studentId)await student(b.studentId);
+            add(db.insert(t.funds).values({ id: uid(), classId, type: b.type, amount: amount(b.amount, 1), studentId: b.studentId || null, description: str(b.description, 500), date: date(b.date), proof: safeUrl(b.proof), status: 'approved', createdBy: user.email,collectionId:null }));
             break;
         }
         case 'reviewFund': {
-            needTeacher();
-            const f = await db.select().from(t.funds).where(and(eq(t.funds.id, b.id), eq(t.funds.classId, classId))).get();
-            if (!f || f.status !== 'pending')
-                fail(400, 'Chỉ duyệt giao dịch đang chờ');
-            if (!['approved', 'rejected'].includes(b.status))
-                fail(400, 'Trạng thái không hợp lệ');
-            add(db.update(t.funds).set({ status: b.status }).where(eq(t.funds.id, f.id)));
+            if(!teacher&&!roles.includes('treasurer'))fail(403,'Chỉ thủ quỹ hoặc giáo viên được duyệt giao dịch.');
+            const f=await db.select().from(t.funds).where(and(eq(t.funds.id,b.id),eq(t.funds.classId,classId))).get();
+            if(!f||f.status!=='pending')fail(400,'Chỉ duyệt giao dịch đang chờ');
+            if(!['approved','rejected'].includes(b.status))fail(400,'Trạng thái không hợp lệ');
+            add(db.update(t.funds).set({status:b.status}).where(eq(t.funds.id,f.id)));
             break;
         }
         case 'reverseFund': {
-            needTeacher();
-            const f = await db.select().from(t.funds).where(and(eq(t.funds.id, b.id), eq(t.funds.classId, classId))).get();
-            if (!f || f.status !== 'approved')
-                fail(400, 'Giao dịch không thể đảo');
-            const prior = await db.select().from(t.funds).where(and(eq(t.funds.classId, classId), eq(t.funds.id, 'reverse-' + f.id))).get();
-            if (prior)
-                fail(409, 'Đã có giao dịch điều chỉnh');
-            add(db.insert(t.funds).values({ id: 'reverse-' + f.id, classId, type: f.type === 'income' ? 'expense' : 'income', amount: f.amount, studentId: f.studentId, description: 'Điều chỉnh ' + f.description + ': ' + str(b.reason, 500), date: new Date().toISOString().slice(0, 10), proof: '', status: 'approved', createdBy: user.email }));
+            if(!teacher&&!roles.includes('treasurer'))fail(403,'Chỉ thủ quỹ hoặc giáo viên được điều chỉnh thu chi.');
+            const f=await db.select().from(t.funds).where(and(eq(t.funds.id,b.id),eq(t.funds.classId,classId))).get();
+            if(!f||f.status!=='approved'||f.id.startsWith('reverse-'))fail(400,'Giao dịch không thể đảo.');
+            const prior=await db.select().from(t.funds).where(and(eq(t.funds.classId,classId),eq(t.funds.id,'reverse-'+f.id))).get();
+            if(prior)fail(409,'Đã có giao dịch điều chỉnh');
+            add(db.insert(t.funds).values({id:'reverse-'+f.id,classId,type:f.type==='income'?'expense':'income',amount:f.amount,studentId:f.studentId,description:'Điều chỉnh '+f.description+': '+str(b.reason,500),date:new Date().toISOString().slice(0,10),proof:'',status:'approved',createdBy:user.email,collectionId:f.collectionId}));
             break;
         }
         case 'addActivity': {
@@ -465,7 +493,11 @@ export async function action(b: Row) {
         case 'addDuty': {
             needTeacher();
             const s = await student(b.studentId);
-            add(db.insert(t.duties).values({ id: uid(), classId, studentId: s.id, date: date(b.date), task: str(b.task, 100), source: str(b.source || 'Giáo viên phân công', 300), sourceKey: uid(), status: 'assigned' }));
+            if(parse<string[]>(s.roles,[]).length)fail(400,'Không xếp ban cán sự trực tự động hoặc thủ công.');
+            const when=date(b.date);
+            const occupied=await db.select().from(t.duties).where(and(eq(t.duties.classId,classId),eq(t.duties.studentId,s.id),eq(t.duties.date,when))).get();
+            if(occupied)fail(409,'Học sinh đã có nhiệm vụ trong ngày này.');
+            add(db.insert(t.duties).values({ id: uid(), classId, studentId: s.id, date: when, task: str(b.task, 100), source: str(b.source || 'Giáo viên phân công', 300), sourceKey: uid(), status: 'assigned' }));
             break;
         }
         case 'updateDuty': {
