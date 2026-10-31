@@ -13,7 +13,7 @@
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",
     "check": "tsc --noEmit",
-    "test": "node tests/integration.mjs",
+    "test": "node tests/integration.mjs && node tests/roster-import.mjs",
     "db:migrate:local": "node scripts/migrate-local.mjs"
   },
   "dependencies": {
