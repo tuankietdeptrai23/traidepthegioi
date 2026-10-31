@@ -87,11 +87,12 @@ export async function state(classId?: string) {
     const alertRead=teacher?await db.select().from(t.settings).where(eq(t.settings.key,'alert-read:'+classId+':'+user.email)).get():null;
     // Read class-scoped settings as text: deployed D1 runtimes can reject JSON
     // projection functions, and legacy settings need not contain JSON.
+    // Use indexed ranges, never long LIKE patterns (D1 has a stricter pattern limit).
     const archivePrefix='student-care:'+classId+':week-archive:';
     const weekArchiveRows=teacher?await db.select().from(t.settings).where(sql`${t.settings.key} >= ${archivePrefix} AND ${t.settings.key} < ${archivePrefix+'\uffff'}`).limit(200):[];
     const careRecords:Row[]=[];let careCursor='';const carePrefix='student-care:'+classId+':';
     while(careRecords.length<1001){
-        const rows=await db.select().from(t.settings).where(sql`${t.settings.key} >= ${carePrefix} AND ${t.settings.key} < ${carePrefix+'\uffff'} AND ${t.settings.key} > ${careCursor} AND ${t.settings.key} NOT LIKE ${carePrefix+'attendance:%'} AND ${t.settings.key} NOT LIKE ${carePrefix+'month-archive:%'} AND ${t.settings.key} NOT LIKE ${carePrefix+'week-archive:%'}`).orderBy(t.settings.key).limit(100);
+        const rows=await db.select().from(t.settings).where(sql`${t.settings.key} >= ${carePrefix} AND ${t.settings.key} < ${carePrefix+'\uffff'} AND ${t.settings.key} > ${careCursor} AND NOT (${t.settings.key} >= ${carePrefix+'attendance:'} AND ${t.settings.key} < ${carePrefix+'attendance:\uffff'}) AND NOT (${t.settings.key} >= ${carePrefix+'month-archive:'} AND ${t.settings.key} < ${carePrefix+'month-archive:\uffff'}) AND NOT (${t.settings.key} >= ${carePrefix+'week-archive:'} AND ${t.settings.key} < ${carePrefix+'week-archive:\uffff'})`).orderBy(t.settings.key).limit(100);
         if(!rows.length)break;careCursor=rows[rows.length-1].key;
         const visible=careVisible(rows.map(r=>parse<Row>(r.value,{})).filter(r=>careKinds.includes(r.kind)),teacher,roles,own);
         for(const record of visible){const r={...record};delete r.snapshot;if(r.kind==='duty-proof'){if(typeof r.proof==='string'&&r.proof.startsWith('data:image/')){delete r.proof;r.hasImage=1;}delete r.history;}careRecords.push(r);}
