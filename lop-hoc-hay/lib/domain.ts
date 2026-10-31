@@ -45,7 +45,7 @@ export function standings(groups: Row[], students: Row[], entries: Row[], config
     return groups.map((g): Row => { const members = students.filter(s => s.groupId === g.id && s.active); const records = approved.filter(e => e.groupId === g.id); const personal = members.length * config.base + records.reduce((n, e) => n + e.delta, 0); const attendance = records.some(e => e.category === 'absence') ? 0 : config.bonusAttendance; const uniform = records.some(e => e.category === 'uniform' && e.delta < 0) ? 0 : config.bonusUniform; const clean = records.some(e => e.delta < 0) ? 0 : config.bonusClean; const bonus = attendance + uniform + clean; return { ...g, count: members.length, personal, bonus, score: members.length ? Math.round(((config.mode === 'average' ? personal / members.length : personal) + bonus) * 100) / 100 : 0, violations: records.filter(e => e.delta < 0).reduce((n, e) => n + e.count, 0) }; }).sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, 'vi')).map((g, i, a) => ({ ...g, rank: g.count ? 1 + a.filter(x => x.count && x.score > g.score).length : 0 }));
 }
 export function snapshot(groups: Row[], students: Row[], entries: Row[], config: Config) { return { config, standings: standings(groups, students, entries, config), students: students.map(s => ({ ...s, score: config.base + entries.filter(e => e.studentId === s.id && e.status === 'approved').reduce((n, e) => n + e.delta, 0) })), entries, lockedAt: new Date().toISOString() }; }
-export function canReport(roles: string[], ownGroup: string, group: string) { return roles.includes('leader') || roles.includes('discipline') || roles.includes('study') || (roles.includes('group') && ownGroup === group); }
+export function canReport(roles: string[], ownGroup: string, group: string) { return roles.some(r=>['leader','discipline','study','movement','treasurer'].includes(r)) || (roles.includes('group') && ownGroup === group); }
 export function dutyPlan(snap: Row, week: string, config: Config) {
     const ranked = snap.standings.filter((g: Row) => g.count > 0);
     if (!ranked.length)
@@ -94,3 +94,6 @@ export function validateConfig(c: any): Config {
         throw Error('Mốc đánh giá chưa hợp lệ');
     return { ...c, preferMaleTrash: !!c.preferMaleTrash, violationDuty: !!c.violationDuty };
 }
+
+export function studentLoginBase(name:string){const value=name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/g,'d').replace(/[^a-z0-9]/g,'');return (value.length>=3?value:'hs'+value).slice(0,36)}
+export function seatGroupIndex(seat:number,cols:number,count:number){return Math.min(count-1,Math.floor(((seat-1)%cols)*count/cols))}

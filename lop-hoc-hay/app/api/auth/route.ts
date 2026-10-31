@@ -1,0 +1,10 @@
+import {currentUser,safeUser,canSetupOwner,login,setupOwner,logout,changePassword,sessionCookie,AuthError} from '@/lib/auth';
+export const dynamic='force-dynamic';
+export async function GET(){try{const user=await currentUser();return Response.json({user:user?safeUser(user):null,canSetup:!!(await canSetupOwner())},{headers:{'Cache-Control':'no-store'}})}catch{return Response.json({error:'Không thể kiểm tra đăng nhập.'},{status:503,headers:{'Cache-Control':'no-store'}})}}
+export async function POST(req:Request){try{const url=new URL(req.url);if(req.headers.get('origin')!==url.origin)return Response.json({error:'Yêu cầu không hợp lệ.'},{status:403});if(!req.headers.get('content-type')?.includes('application/json'))return Response.json({error:'Chỉ nhận JSON.'},{status:415});const raw=await req.text();if(raw.length>5000)return Response.json({error:'Dữ liệu quá lớn.'},{status:413});let b;try{b=JSON.parse(raw)}catch{return Response.json({error:'JSON chưa hợp lệ.'},{status:400})}if(!b||typeof b!=='object')return Response.json({error:'Dữ liệu chưa hợp lệ.'},{status:400});
+ const headers=new Headers({'Cache-Control':'no-store'});const secure=url.protocol==='https:';
+ if(b.action==='logout'){await logout();headers.set('Set-Cookie',sessionCookie('',secure,true));return Response.json({ok:true},{headers})}
+ if(b.action==='changePassword'){await changePassword(b.oldPassword,b.password);headers.set('Set-Cookie',sessionCookie('',secure,true));return Response.json({ok:true},{headers})}
+ if(!['login','setup'].includes(b.action))return Response.json({error:'Thao tác chưa hợp lệ.'},{status:400});
+ const result=b.action==='setup'?await setupOwner(b.loginId,b.password):await login(b.loginId,b.password,req.headers.get('cf-connecting-ip')||'unknown');headers.set('Set-Cookie',sessionCookie(result.token,secure));return Response.json({ok:true,user:result.user},{headers});
+ }catch(e){return Response.json({error:e instanceof AuthError?e.message:'Không thể đăng nhập. Vui lòng thử lại.'},{status:e instanceof AuthError?e.status:500,headers:{'Cache-Control':'no-store'}})}}

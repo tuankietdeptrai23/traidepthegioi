@@ -15,6 +15,20 @@
       "when": 1793370797879,
       "tag": "0001_flaky_sunspot",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1793414764843,
+      "tag": "0002_furry_scarlet_spider",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1793415288571,
+      "tag": "0003_normal_toro",
+      "breakpoints": true
     }
   ]
 }

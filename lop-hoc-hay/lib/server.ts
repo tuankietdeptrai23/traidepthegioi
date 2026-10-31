@@ -1,8 +1,8 @@
 import { eq, and, or, inArray, sql } from 'drizzle-orm';
 import { getDb } from '@/db';
 import * as t from '@/db/schema';
-import { getChatGPTUser } from '@/app/chatgpt-auth';
-import { defaultConfig, parse, canReport, monday, snapshot, dutyPlan, validateConfig, type Row, type Config } from './domain';
+import { currentUser, safeUser, normalizeLogin, passwordRecord } from './auth';
+import { defaultConfig, parse, canReport, monday, snapshot, dutyPlan, validateConfig, studentLoginBase, seatGroupIndex, type Row, type Config } from './domain';
 export class HttpError extends Error {
     constructor(public status: number, message: string) { super(message); }
 }
@@ -10,8 +10,7 @@ function fail(s: number, m: string): never { throw new HttpError(s, m); }
 const uid = () => crypto.randomUUID();
 const now = () => new Date().toISOString();
 const str = (v: any, max = 300) => typeof v === 'string' && v.trim() && v.trim().length <= max ? v.trim() : fail(400, 'Thông tin còn thiếu hoặc quá dài');
-const email = (v: any) => { const s = str(v, 200).toLowerCase(); if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s))
-    fail(400, 'Email không hợp lệ'); return s; };
+const email = (v:any) => {const value=str(v,200).toLowerCase(); if(!/^[a-z0-9][a-z0-9_.@-]{1,199}$/.test(value))fail(400,'ID tài khoản không hợp lệ');return value};
 const safeUrl = (v: any) => { if (!v)
     return ''; try {
     const u = new URL(v);
@@ -29,20 +28,9 @@ function week(v: any) { const s = date(v); if (monday(new Date(s)) !== s)
 function amount(v: any, min = 0, max = 1e9) { const n = Number(v); if (!Number.isSafeInteger(n) || n < min || n > max)
     fail(400, 'Giá trị số không hợp lệ'); return n; }
 export async function identity() {
-    const who = await getChatGPTUser();
-    if (!who)
-        fail(401, 'Cần đăng nhập bằng ChatGPT');
-    const db = getDb();
-    const e = who.email.toLowerCase();
-    // Owner-only Site at first deployment. Persist the first verified identity as administrator.
-    await db.insert(t.settings).values({ key: 'owner', value: e }).onConflictDoNothing();
-    const owner = await db.select().from(t.settings).where(eq(t.settings.key, 'owner')).get();
-    if (owner?.value === e)
-        await db.insert(t.users).values({ email: e, name: who.fullName || 'Quản trị viên', role: 'admin', active: 1 }).onConflictDoNothing();
-    const u = await db.select().from(t.users).where(eq(t.users.email, e)).get();
-    if (!u || !u.active)
-        fail(403, 'Tài khoản chưa được cấp quyền hoặc đã khóa. Liên hệ quản trị viên / giáo viên.');
-    return { db, user: u };
+    const user=await currentUser();
+    if(!user)fail(401,'Đăng nhập bằng ID và mật khẩu do admin cấp.');
+    return {db:getDb(),user};
 }
 async function context(classId: string) {
     const { db, user } = await identity();
@@ -61,7 +49,7 @@ export async function state(classId?: string) {
     const allClasses = await db.select().from(t.classes);
     const memberships = await db.select({ classId: t.students.classId }).from(t.students).where(and(eq(t.students.email, user.email), eq(t.students.active, 1)));
     const allowed = allClasses.filter(c => user.role === 'admin' || (user.role === 'teacher' && c.teacherEmail === user.email) || memberships.some(m => m.classId === c.id));
-    const common: Row = { user, classes: allowed.map(c => ({ ...c, config: parse(c.config, defaultConfig) })), users: user.role === 'admin' ? await db.select().from(t.users) : [] };
+    const common: Row = { user:safeUser(user), classes: allowed.map(c => ({ ...c, config: parse(c.config, defaultConfig) })), users: user.role === 'admin' ? (await db.select().from(t.users)).map(safeUser) : [], placementGroups:user.role==='admin'?await db.select().from(t.groups):[], accountMemberships:user.role==='admin'?await db.select({account:t.students.email,classId:t.students.classId,groupId:t.students.groupId}).from(t.students).where(eq(t.students.active,1)):[] };
     if (!classId)
         return common;
     const c = await context(classId);
@@ -76,7 +64,8 @@ export async function state(classId?: string) {
     const weekly = [...new Set([monday(), ...entries.map(e => e.week), ...periods.map(p => p.week), ...reports.map(r => r.week)])];
     const ranks = Object.fromEntries(weekly.map(w => { const p = periods.find(p => p.week === w && p.status === 'locked'); return [w, p ? parse<Row>(p.snapshot, {}).standings : snapshot(groups, students, entries.filter(e => e.week === w), c.config).standings]; }));
     const historyScores = Object.fromEntries(periods.filter(p => p.status === 'locked').map(p => { const sn = parse<Row>(p.snapshot, {}); return [p.week, (sn.students || []).filter((s: Row) => ids.has(s.id)).map((s: Row) => ({ id: s.id, name: s.name, groupId: s.groupId, score: s.score }))]; }));
-    common.detail = { ...c.cls, config: c.config, teacher, ownId: own?.id, roles, groups, students: students.map(s => teacher ? s : ({ ...s, email: s.id === own?.id ? s.email : '', roles: s.roles })), periods: periods.map(p => ({ ...p, snapshot: undefined })), entries: entries.filter(e => ids.has(e.studentId)), reports: reports.map(r => teacher || canReport(roles, own?.groupId || '', r.groupId) ? r : { ...r, note: '', createdBy: '' }), grades: grades.filter(g => (teacher || g.studentId === own?.id) && (g.confirmed || g.createdBy === user.email)), conduct: conduct.filter(x => teacher || x.studentId === own?.id), fundSummary: {income: funds.filter(f=>f.status==='approved'&&f.type==='income').reduce((n,f)=>n+f.amount,0),expense:funds.filter(f=>f.status==='approved'&&f.type==='expense').reduce((n,f)=>n+f.amount,0)}, funds: funds.filter(f => teacher || roles.includes('treasurer') || (f.status === 'approved' && (!f.studentId || f.studentId === own?.id))).map(f => teacher || roles.includes('treasurer') ? f : { ...f, proof: '', createdBy: '' }), activities, duties, notices, feedback: feedback.filter(f => teacher || f.createdBy === user.email), audit, ranks, historyScores };
+    const sheets=Object.fromEntries(weekly.map(w=>{const locked=periods.find(p=>p.week===w&&p.status==='locked');const snap=locked?parse<Row>(locked.snapshot,{}):null;const rules=(snap?.config||c.config).rules;const roster=(snap?.students||students).filter((s:Row)=>s.active);const records=(snap?.entries||entries.filter(e=>e.week===w));return [w,{rules,base:(snap?.config||c.config).base,rows:roster.map((s:Row)=>{const editable=teacher||canReport(roles,own?.groupId||'',s.groupId);const seen=records.filter((e:Row)=>e.studentId===s.id&&e.groupId===s.groupId&&(e.status==='approved'||(editable&&e.status==='pending')));return {id:s.id,name:s.name,groupId:s.groupId,counts:Object.fromEntries(rules.map((r:Row)=>[r.id,seen.filter((e:Row)=>e.ruleId===r.id).reduce((n:number,e:Row)=>n+e.count,0)])),score:snap?s.score:c.config.base+records.filter((e:Row)=>e.studentId===s.id&&e.status==='approved').reduce((n:number,e:Row)=>n+e.delta,0)}})}]}));
+    common.detail = { ...c.cls, config: c.config, teacher, ownId: own?.id, roles, groups, students: students.map(s => teacher ? s : ({ ...s, email: s.id === own?.id ? s.email : '', roles: s.roles })), periods: periods.map(p => ({ ...p, snapshot: undefined })), entries: entries.filter(e => ids.has(e.studentId)), reports: reports.map(r => teacher || canReport(roles, own?.groupId || '', r.groupId) ? r : { ...r, note: '', createdBy: '' }), grades: grades.filter(g => (teacher || g.studentId === own?.id) && (g.confirmed || g.createdBy === user.email)), conduct: conduct.filter(x => teacher || x.studentId === own?.id), fundSummary: {income: funds.filter(f=>f.status==='approved'&&f.type==='income').reduce((n,f)=>n+f.amount,0),expense:funds.filter(f=>f.status==='approved'&&f.type==='expense').reduce((n,f)=>n+f.amount,0)}, funds: funds.filter(f => teacher || roles.includes('treasurer') || (f.status === 'approved' && (!f.studentId || f.studentId === own?.id))).map(f => teacher || roles.includes('treasurer') ? f : { ...f, proof: '', createdBy: '' }), activities, duties, notices, feedback: feedback.filter(f => teacher || f.createdBy === user.email), audit, ranks, historyScores, sheets };
     return common;
 }
 export async function action(b: Row) {
@@ -86,15 +75,31 @@ export async function action(b: Row) {
         if (user.role !== 'admin')
             fail(403, 'Chỉ quản trị viên có quyền này');
         if (actionName === 'saveAccount') {
-            const e = email(b.email);
-            if (e === user.email && (!b.active || b.role !== 'admin'))
-                fail(400, 'Không thể tự khóa hoặc hạ quyền quản trị của mình');
-            const owner = await db.select().from(t.settings).where(eq(t.settings.key, 'owner')).get();
-            if (e === owner?.value && (b.role !== 'admin' || !b.active))
-                fail(400, 'Không thể hạ quyền tài khoản chủ sở hữu');
-            if (!['admin', 'teacher', 'student'].includes(b.role))
-                fail(400, 'Vai trò không hợp lệ');
-            await db.insert(t.users).values({ email: e, name: str(b.name, 100), role: b.role, active: b.active ? 1 : 0 }).onConflictDoUpdate({ target: t.users.email, set: { name: str(b.name, 100), role: b.role, active: b.active ? 1 : 0 } });
+            const loginId=normalizeLogin(b.loginId);
+            const e=b.email?email(b.email):loginId;
+            const previous=await db.select().from(t.users).where(eq(t.users.email,e)).get();
+            const used=await db.select().from(t.users).where(eq(t.users.loginId,loginId)).get();
+            if(used&&used.email!==e)fail(409,'ID đã tồn tại. Hãy chọn ID khác.');
+            if (e === user.email && (!b.active || b.role !== 'admin'))fail(400,'Không thể tự khóa hoặc hạ quyền quản trị của mình');
+            const owner=await db.select().from(t.settings).where(eq(t.settings.key,'owner')).get();
+            if(e===owner?.value&&(b.role!=='admin'||!b.active))fail(400,'Không thể hạ quyền tài khoản chủ sở hữu');
+            if(!['admin','teacher','student'].includes(b.role))fail(400,'Vai trò không hợp lệ');
+            if(!previous&&!b.password)fail(400,'Cần đặt mật khẩu cho tài khoản mới.');
+            const creds=b.password?await passwordRecord(b.password):{};
+            const value={email:e,name:str(b.name,100),role:b.role,active:b.active?1:0,loginId,...creds,credentialVersion:(previous?.credentialVersion||0)+(b.password?1:0),mustChangePassword:b.password?(b.password==='12345678'?1:0):(previous?.mustChangePassword||0)};
+            const ops:any[]=[db.insert(t.users).values(value).onConflictDoUpdate({target:t.users.email,set:value}),db.update(t.students).set({name:value.name}).where(eq(t.students.email,e))];
+            if(b.password||!b.active)ops.push(db.delete(t.sessions).where(eq(t.sessions.userKey,e)));
+            if(b.groupId){
+                if(b.role!=='student')fail(400,'Chỉ xếp học sinh vào tổ. Giáo viên được phân công ở phần lớp học.');
+                const group=await db.select().from(t.groups).where(eq(t.groups.id,str(b.groupId,100))).get();
+                if(!group)fail(400,'Không tìm thấy tổ.');
+                const member=await db.select().from(t.students).where(and(eq(t.students.classId,group.classId),eq(t.students.email,e))).get();
+                if(member)ops.push(db.update(t.students).set({name:value.name,groupId:group.id,active:1,roles:member.groupId===group.id?member.roles:JSON.stringify(parse<string[]>(member.roles,[]).filter(r=>r!=='group'))}).where(eq(t.students.id,member.id)));
+                else ops.push(db.insert(t.students).values({id:uid(),classId:group.classId,name:value.name,email:e,groupId:group.id,gender:b.gender==='male'?'male':b.gender==='female'?'female':'other',roles:'[]'}));
+                ops.push(db.update(t.classes).set({revision:sql`${t.classes.revision}+1`}).where(eq(t.classes.id,group.classId)));
+            }
+            ops.push(db.insert(t.audit).values({id:uid(),classId:null,actor:user.email,action:'saveAccount',details:JSON.stringify({account:e,loginId,role:b.role,active:!!b.active,passwordReset:!!b.password,groupId:b.groupId||null}),createdAt:now()}));
+            await db.batch(ops as any);return {ok:true};
         }
         else {
             const e = email(b.teacherEmail);
@@ -157,14 +162,18 @@ export async function action(b: Row) {
             const gs = await allGroups();
             if (!gs.some(g => g.id === b.groupId))
                 fail(400, 'Tổ không thuộc lớp');
-            const e = email(b.email);
+            const provided=email(b.email);
+            const found=await db.select().from(t.users).where(or(eq(t.users.email,provided),eq(t.users.loginId,provided))).get();
+            const e=found?.email||provided;
+            const linked=await db.select().from(t.users).where(eq(t.users.email,e)).get();
+            if(!linked||linked.role!=='student')fail(400,'ID chưa được admin cấp tài khoản học sinh.');
             const name = str(b.name, 100);
             const r = b.roles || [];
             if (!Array.isArray(r) || r.some(x => !['leader', 'study', 'discipline', 'movement', 'group', 'treasurer'].includes(x)))
                 fail(400, 'Chức vụ không hợp lệ');
             const rows = await allStudents();
             if (rows.some(s => s.email === e && s.id !== b.id))
-                fail(400, 'Email đã có trong lớp');
+                fail(400, 'ID đã có trong lớp');
             if (r.includes('leader') && rows.some(s => s.active && s.id !== b.id && parse<string[]>(s.roles, []).includes('leader')))
                 fail(400, 'Hãy miễn nhiệm lớp trưởng hiện tại trước');
             if (r.includes('group') && rows.some(s => s.active && s.id !== b.id && s.groupId === b.groupId && parse<string[]>(s.roles, []).includes('group')))
@@ -176,28 +185,30 @@ export async function action(b: Row) {
             }
             else
                 add(db.insert(t.students).values({ id: uid(), classId, ...v }));
-            add(db.insert(t.users).values({ email: e, name, role: 'student', active: 1 }).onConflictDoNothing());
+            
             break;
         }
         case 'importStudents': {
             needTeacher();
-            if (!Array.isArray(b.rows) || !b.rows.length || b.rows.length > 200)
-                fail(400, 'Nhập từ 1–200 học sinh mỗi lần');
-            const gs = await allGroups();
-            const existing = await allStudents();
-            const seen = new Set(existing.map(s => s.email));
-            for (const row of b.rows) {
-                const e = email(row.email);
-                if (seen.has(e))
-                    fail(400, 'Email bị trùng: ' + e);
-                seen.add(e);
-                const g = gs.find(g => g.name === row.group || g.id === row.group);
-                if (!g)
-                    fail(400, 'Không tìm thấy tổ: ' + row.group);
-                const name = str(row.name, 100);
-                add(db.insert(t.students).values({ id: uid(), classId, name, email: e, groupId: g.id, gender: row.gender === 'male' ? 'male' : row.gender === 'female' ? 'female' : 'other', roles: '[]' }));
-                add(db.insert(t.users).values({ email: e, name, role: 'student', active: 1 }).onConflictDoNothing());
+            if(!Array.isArray(b.rows)||!b.rows.length||b.rows.length>20)fail(400,'Mỗi lượt nhập tối đa 20 học sinh. Giao diện sẽ tự chia danh sách dài.');
+            const gs=(await allGroups()).sort((a,b)=>a.name.localeCompare(b.name,'vi',{numeric:true}));
+            if(!gs.length)fail(400,'Lớp chưa có tổ.');
+            const existing=await allStudents();const seen=new Set(existing.map(x=>x.email));
+            const accounts=await db.select().from(t.users);const taken=new Set(accounts.flatMap(x=>[x.email,x.loginId||'']));
+            const created:Row[]=[];
+            for(const row of b.rows){
+                const name=str(row.name,100);let e:string;
+                if(row.email){const provided=email(row.email);const found=accounts.find(x=>x.email===provided||x.loginId===provided);e=found?.email||provided;
+                    if(!found||found.role!=='student')fail(400,'ID chưa được cấp: '+provided);
+                }else{const base=studentLoginBase(name);let id=base;let suffix=2;while(taken.has(id)){id=base+suffix++;}taken.add(id);e=id;const creds=await passwordRecord('12345678');
+                    add(db.insert(t.users).values({email:id,loginId:id,name,role:'student',active:1,...creds,credentialVersion:1,mustChangePassword:1}));
+                    created.push({name,loginId:id});
+                }
+                if(seen.has(e))fail(400,'ID bị trùng trong lớp: '+e);seen.add(e);
+                const g=row.group?gs.find(x=>x.name===row.group||x.id===row.group):gs[0];if(!g)fail(400,'Không tìm thấy tổ: '+row.group);
+                add(db.insert(t.students).values({id:uid(),classId,name,email:e,groupId:g.id,gender:row.gender==='male'?'male':row.gender==='female'?'female':'other',roles:'[]'}));
             }
+            b._createdAccounts=created;
             break;
         }
         case 'archiveStudent': {
@@ -207,24 +218,28 @@ export async function action(b: Row) {
             break;
         }
         case 'saveSeats': {
-            needTeacher();
-            if (!Array.isArray(b.seats))
-                fail(400, 'Sơ đồ chưa hợp lệ');
-            const seen = new Set();
-            const ids = new Set();
-            for (const item of b.seats) {
-                await student(item.id);
-                if (ids.has(item.id))
-                    fail(400, 'Học sinh bị lặp');
-                ids.add(item.id);
-                const n = amount(item.seat, 1, config.rows * config.cols);
-                if (seen.has(n))
-                    fail(400, 'Một chỗ chỉ có một học sinh');
-                seen.add(n);
-            }
-            add(db.update(t.students).set({ seat: '' }).where(eq(t.students.classId, classId)));
-            for (const item of b.seats)
-                add(db.update(t.students).set({ seat: String(item.seat) }).where(eq(t.students.id, item.id)));
+            needTeacher();if(!Array.isArray(b.seats)||b.seats.length>200)fail(400,'Sơ đồ chưa hợp lệ');
+            const members=await allStudents();const gs=(await allGroups()).sort((a,b)=>a.name.localeCompare(b.name,'vi',{numeric:true}));
+            if(gs.length>config.cols)fail(400,'Số chỗ mỗi hàng phải ít nhất bằng số tổ. Hãy tăng số cột trong cài đặt.');
+            const seen=new Set();const ids=new Set();
+            for(const item of b.seats){if(!members.some(x=>x.id===item.id&&x.active))fail(400,'Học sinh không thuộc lớp');if(ids.has(item.id))fail(400,'Học sinh bị lặp');ids.add(item.id);const n=amount(item.seat,1,config.rows*config.cols);if(seen.has(n))fail(400,'Một chỗ chỉ có một học sinh');seen.add(n);}
+            add(db.update(t.students).set({seat:''}).where(eq(t.students.classId,classId)));
+            for(const item of b.seats){const member=members.find(x=>x.id===item.id)!;const group=gs[seatGroupIndex(Number(item.seat),config.cols,gs.length)];
+                add(db.update(t.students).set({seat:String(item.seat),groupId:group.id,roles:member.groupId===group.id?member.roles:JSON.stringify(parse<string[]>(member.roles,[]).filter(r=>r!=='group'))}).where(eq(t.students.id,item.id)));
+            }break;
+        }
+        case 'saveSheet': {
+            const w=week(b.week);await openWeek(w);const groupId=str(b.groupId,100);reportPermission(groupId);
+            const rep=await db.select().from(t.reports).where(and(eq(t.reports.classId,classId),eq(t.reports.week,w),eq(t.reports.groupId,groupId))).get();
+            if(rep&&rep.status!=='returned')fail(409,'Báo cáo đã gửi. Giáo viên cần trả lại trước khi sửa bảng.');
+            if(!Array.isArray(b.cells)||!b.cells.length||b.cells.length>80)fail(400,'Mỗi lần lưu tối đa 80 ô đã thay đổi.');
+            const members=await allStudents();const old=await db.select().from(t.entries).where(and(eq(t.entries.classId,classId),eq(t.entries.week,w),eq(t.entries.groupId,groupId)));
+            const changes:Row[]=[];const keys=new Set();
+            for(const cell of b.cells){const member=members.find(x=>x.id===cell.studentId&&x.groupId===groupId&&x.active);if(!member)fail(403,'Chỉ được nhập học sinh trong tổ được giao');const rule=config.rules.find(x=>x.id===cell.ruleId);if(!rule)fail(400,'Quy tắc đã thay đổi. Hãy tải lại bảng.');const count=amount(cell.count,0,100);if(rule.limit&&count>rule.limit)fail(400,'Vượt giới hạn quy tắc: '+rule.name);const key=member.id+':'+rule.id;if(keys.has(key))fail(400,'Ô bị lặp');keys.add(key);changes.push({member,rule,count});}
+            for(const member of members.filter(x=>x.groupId===groupId)){const speaking=config.rules.filter(r=>r.category==='speaking').filter(r=>{const change=changes.find(x=>x.member.id===member.id&&x.rule.id===r.id);return change?change.count>0:old.some(e=>e.studentId===member.id&&e.ruleId===r.id&&e.status!=='rejected')});if(speaking.length>1)fail(400,'Mỗi học sinh chỉ áp dụng một mốc phát biểu/tuần.');}
+            for(let i=0;i<changes.length;i+=20){const chunk=changes.slice(i,i+20);add(db.update(t.entries).set({status:'rejected',reviewNote:'Thay thế bởi bảng nhập thi đua'}).where(and(eq(t.entries.classId,classId),eq(t.entries.week,w),eq(t.entries.groupId,groupId),or(...chunk.map(x=>and(eq(t.entries.studentId,x.member.id),eq(t.entries.ruleId,x.rule.id)))))))}
+            const values=changes.filter(x=>x.count>0).map(x=>({id:uid(),classId,week:w,studentId:x.member.id,groupId,ruleId:x.rule.id,ruleName:x.rule.name,category:x.rule.category,delta:x.rule.points*x.count,count:x.count,status:'pending',note:'Nhập qua bảng thi đua tổ',proof:'',grade:['grade8','grade9','grade10'].includes(x.rule.id)?x.rule.id.slice(5):'',subject:String(b.subject||'').slice(0,100),createdBy:user.email,createdAt:now(),reviewNote:''}));
+            for(let i=0;i<values.length;i+=4)add(db.insert(t.entries).values(values.slice(i,i+4)));
             break;
         }
         case 'addEntry': {
@@ -465,7 +480,7 @@ export async function action(b: Row) {
     const guardId = uid();
     // D1 batch rolls back on a failed CHECK. A class revision protects read/compute/write
     // operations, so a concurrent approval cannot silently invalidate a weekly snapshot.
-    const guarded = [db.insert(t.guards).values({ id: guardId, ok: sql `CASE WHEN (SELECT revision FROM classes WHERE id = ${classId}) = ${cls.revision} THEN 1 ELSE 0 END` }), ...commands, db.update(t.classes).set({ revision: cls.revision + 1 }).where(eq(t.classes.id, classId)), db.insert(t.audit).values({ id: uid(), classId, actor: user.email, action: actionName, details: JSON.stringify({ ...b, action: undefined }).slice(0, 30000), createdAt: now() }), db.delete(t.guards).where(eq(t.guards.id, guardId))];
+    const guarded = [db.insert(t.guards).values({ id: guardId, ok: sql `CASE WHEN (SELECT revision FROM classes WHERE id = ${classId}) = ${cls.revision} THEN 1 ELSE 0 END` }), ...commands, db.update(t.classes).set({ revision: cls.revision + 1 }).where(eq(t.classes.id, classId)), db.insert(t.audit).values({ id: uid(), classId, actor: user.email, action: actionName, details: JSON.stringify({ ...b, action: undefined, password:undefined,oldPassword:undefined,_createdAccounts:undefined }).slice(0, 30000), createdAt: now() }), db.delete(t.guards).where(eq(t.guards.id, guardId))];
     try {
         await db.batch(guarded as any);
     }
@@ -474,5 +489,5 @@ export async function action(b: Row) {
             fail(409, 'Dữ liệu vừa được cập nhật. Tải lại rồi thử lại.');
         throw e;
     }
-    return { ok: true };
+    return { ok: true,createdAccounts:b._createdAccounts||[] };
 }

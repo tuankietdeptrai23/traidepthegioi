@@ -4,7 +4,10 @@
 
 - `app/class-app.tsx`: ứng dụng React, biểu mẫu và các màn hình.
 - `app/globals.css`: thiết kế thích ứng và bản in.
-- `app/chatgpt-auth.ts`: danh tính do Sites xác thực; nhánh development loại khỏi production.
+- `lib/auth.ts`: mật khẩu băm, đăng nhập ID, phiên cookie, giới hạn đăng nhập và khởi tạo admin.
+- `app/api/auth/route.ts`: kiểm tra phiên, đăng nhập, đăng xuất, đổi mật khẩu và thiết lập admin lần đầu.
+- `app/login-screen.tsx`: màn hình đăng nhập và thiết lập quản trị.
+- `app/chatgpt-auth.ts`: chỉ xác thực chủ sở hữu cho lần thiết lập quản trị đầu tiên.
 - `app/api/state/route.ts`: đọc trạng thái có lọc quyền, `Cache-Control: no-store`.
 - `app/api/action/route.ts`: kiểm tra Origin, Content-Type và kích thước JSON, gọi nghiệp vụ.
 - `lib/server.ts`: xác thực, kiểm tra lớp/tổ, nghiệp vụ và batch giao dịch.
@@ -14,9 +17,9 @@
 
 ## Dữ liệu
 
-17 bảng: users, settings, classes, groups, students, entries, reports, periods, grades, conduct, funds, activities, duties, notices, feedback, audit, guards.
+19 bảng (cộng auth_sessions và auth_attempts): users, settings, classes, groups, students, entries, reports, periods, grades, conduct, funds, activities, duties, notices, feedback, audit, guards.
 
-Danh tính email liên kết với users và danh sách students. Quyền cán sự đặt trong từng bản ghi students, không đặt ở user toàn hệ thống. Giáo viên được giao qua teacher_email của lớp và phải có role teacher đang hoạt động; admin có quyền toàn hệ thống.
+Khóa tài khoản ổn định liên kết users và students. Các cột tên email cũ được giữ tương thích; ID đăng nhập riêng ở users.login_id, không yêu cầu email. Quyền cán sự đặt trong từng bản ghi students, không đặt ở user toàn hệ thống. Giáo viên được giao qua teacher_email của lớp và phải có role teacher đang hoạt động; admin có quyền toàn hệ thống.
 
 entries lưu tên quy tắc và delta tại lúc tạo, không tính lại từ tên quy tắc mới. periods lưu JSON ảnh chụp kết quả khi chốt. Hồ sơ chính thức không thể được thay bằng thao tác tự ghi điểm của học sinh.
 

@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { integer, sqliteTable, text, uniqueIndex, check, index } from 'drizzle-orm/sqlite-core';
-export const users = sqliteTable('users', { email: text('email').primaryKey(), name: text('name').notNull(), role: text('role').notNull().default('student'), active: integer('active').notNull().default(1) });
+export const users = sqliteTable('users', { email: text('email').primaryKey(), name: text('name').notNull(), role: text('role').notNull().default('student'), active: integer('active').notNull().default(1), loginId:text('login_id').unique(), passwordHash:text('password_hash'), passwordSalt:text('password_salt'), credentialVersion:integer('credential_version').notNull().default(0), mustChangePassword:integer('must_change_password').notNull().default(0) });
 export const settings = sqliteTable('settings', { key: text('key').primaryKey(), value: text('value').notNull() });
 export const classes = sqliteTable('classes', { id: text('id').primaryKey(), revision: integer('revision').notNull().default(0), name: text('name').notNull(), year: text('year').notNull(), teacherEmail: text('teacher_email').notNull(), config: text('config').notNull(), createdAt: text('created_at').notNull() });
 export const groups = sqliteTable('groups', { id: text('id').primaryKey(), classId: text('class_id').notNull().references(() => classes.id), name: text('name').notNull() });
@@ -17,3 +17,6 @@ export const notices = sqliteTable('notices', { id: text('id').primaryKey(), cla
 export const feedback = sqliteTable('feedback', { id: text('id').primaryKey(), classId: text('class_id').notNull().references(() => classes.id), studentId: text('student_id').notNull().references(() => students.id), entryId: text('entry_id'), message: text('message').notNull(), response: text('response').notNull().default(''), status: text('status').notNull().default('pending'), createdBy: text('created_by').notNull(), createdAt: text('created_at').notNull() });
 export const audit = sqliteTable('audit', { id: text('id').primaryKey(), classId: text('class_id'), actor: text('actor').notNull(), action: text('action').notNull(), details: text('details').notNull(), createdAt: text('created_at').notNull() });
 export const guards = sqliteTable('guards', { id: text('id').primaryKey().notNull(), ok: integer('ok').notNull() }, t => [check('guard_ok', sql `${t.ok}=1`)]);
+
+export const sessions = sqliteTable('auth_sessions', {tokenHash:text('token_hash').primaryKey(),userKey:text('user_key').notNull().references(()=>users.email),expiresAt:integer('expires_at').notNull(),createdAt:integer('created_at').notNull(),version:integer('version').notNull()}, t=>[index('sessions_user').on(t.userKey)]);
+export const attempts = sqliteTable('auth_attempts', {key:text('key').primaryKey(),windowStart:integer('window_start').notNull(),count:integer('count').notNull().default(0)});

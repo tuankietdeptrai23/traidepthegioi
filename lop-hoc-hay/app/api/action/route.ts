@@ -1,3 +1,4 @@
+import {AuthError} from '@/lib/auth';
 import { action, HttpError } from '@/lib/server';
 export const dynamic = 'force-dynamic';
 export async function POST(req: Request) {
@@ -21,7 +22,7 @@ export async function POST(req: Request) {
         return Response.json(await action(data), { headers: { 'Cache-Control': 'no-store' } });
     }
     catch (e) {
-        console.error(e instanceof HttpError ? e.message : String(e));
-        return Response.json({ error: e instanceof HttpError ? e.message : 'Không thể lưu. Kiểm tra dữ liệu và thử lại.' }, { status: e instanceof HttpError ? e.status : 500 });
+        console.error((e instanceof HttpError || e instanceof AuthError) ? e.message : String(e));
+        return Response.json({ error: (e instanceof HttpError || e instanceof AuthError) ? e.message : 'Không thể lưu. Kiểm tra dữ liệu và thử lại.' }, { status: (e instanceof HttpError || e instanceof AuthError) ? e.status : 500 });
     }
 }
