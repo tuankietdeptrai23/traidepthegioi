@@ -83,23 +83,19 @@ export function dutyPlan(snap: Row, week: string, config: Config) {
     const min = Math.min(...ranked.map((g: Row) => g.score));
     const last = new Set(ranked.filter((g: Row) => g.score === min).map((g: Row) => g.id));
     const members = snap.students.filter((s: Row) => s.active && last.has(s.groupId));
-    const tasks = ['Quét lớp', 'Lau bảng', 'Lau bàn', 'Đổ rác'];
     const out: Row[] = [];
-    for (let d = 0; d < config.lastDutyDays; d++) {
-        let queue = [...members];
-        if (config.preferMaleTrash) {
-            const male = queue.filter((s: Row) => s.gender === 'male');
-            const weekIndex = Math.floor(Date.parse(week + 'T00:00:00Z') / 604800000);
-            const pick = male[(weekIndex + d) % Math.max(male.length, 1)];
-            if (pick) {
-                queue = queue.filter((s: Row) => s.id !== pick.id);
-                out.push({ studentId: pick.id, date: dayPlus(week, 7 + d), task: 'Đổ rác', source: 'Tổ cuối tuần ' + week, sourceKey: `last:${week}:${d}:${pick.id}` });
-            }
-        }
-        queue.forEach((s: Row, i: number) => out.push({ studentId: s.id, date: dayPlus(week, 7 + d), task: tasks[i % (queue.length === members.length ? 4 : 3)], source: 'Tổ cuối tuần ' + week, sourceKey: `last:${week}:${d}:${s.id}` }));
+    const weekIndex=Math.floor(Date.parse(week+'T00:00:00Z')/604800000);
+    for(let d=0;d<config.lastDutyDays;d++){
+        if(!members.length)break;
+        const offset=(weekIndex+d)%members.length;let queue=[...members.slice(offset),...members.slice(0,offset)];let trash:Row|undefined;
+        if(config.preferMaleTrash){const male=members.filter((s:Row)=>s.gender==='male');trash=male[(weekIndex+d)%Math.max(1,male.length)];}
+        if(trash){out.push({studentId:trash.id,date:dayPlus(week,7+d),task:'Đổ rác',source:'Tổ cuối tuần '+week,sourceKey:`last:${week}:${d}:${trash.id}:trash`});queue=queue.filter((s:Row)=>s.id!==trash!.id);if(!queue.length)queue=[trash];}
+        const tasks=trash?['Quét lớp','Lau bảng','Lau bàn']:['Quét lớp','Lau bảng','Lau bàn','Đổ rác'];
+        for(let i=0;i<Math.max(queue.length,tasks.length);i++){const s=queue[i%queue.length];out.push({studentId:s.id,date:dayPlus(week,7+d),task:tasks[i%tasks.length],source:'Tổ cuối tuần '+week,sourceKey:`last:${week}:${d}:${s.id}:${i}`});}
     }
     if (config.violationDuty) {
-        const offenders = [...new Set(snap.entries.filter((e: Row) => e.delta < 0 && e.status === 'approved').map((e: Row) => e.studentId))];
+        const activeIds=new Set(snap.students.filter((s:Row)=>s.active).map((s:Row)=>s.id));
+        const offenders = [...new Set(snap.entries.filter((e: Row) => e.delta < 0 && e.status === 'approved' && activeIds.has(e.studentId)).map((e: Row) => e.studentId))];
         offenders.forEach((id: any, i) => out.push({ studentId: id, date: dayPlus(week, 7 + config.lastDutyDays + i % Math.max(1, 5 - config.lastDutyDays)), task: 'Vệ sinh lớp', source: 'Vi phạm tuần ' + week, sourceKey: `violation:${week}:${id}` }));
     }
     return out;

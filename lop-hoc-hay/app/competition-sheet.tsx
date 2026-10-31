@@ -1,7 +1,8 @@
 'use client';
 import {useEffect,useState} from 'react';
 import {Table2,SquarePen,Save,LockKeyhole,CheckCircle2,Info} from 'lucide-react';
-import {canReport,ruleScore,speakingKpiLabel,classSubjects,needsLearningSubject,type Row,type Rule} from '@/lib/domain';
+import {countPaste} from '@/lib/sheet-input';
+import {canReport,ruleScore,classSubjects,needsLearningSubject,type Row,type Rule} from '@/lib/domain';
 
 export default function CompetitionSheet({d,week,save,reorderRules,busy}:any){
  const roles:string[]=d.roles||[];
@@ -13,6 +14,7 @@ export default function CompetitionSheet({d,week,save,reorderRules,busy}:any){
  const [selectedRuleId,setSelectedRuleId]=useState('');
  const [draft,setDraft]=useState<Row>({});
  const [subject,setSubject]=useState('');
+ const [category,setCategory]=useState('all');
  const [saving,setSaving]=useState(false);
  const [moving,setMoving]=useState(false);
  const [dragRule,setDragRule]=useState('');
@@ -22,6 +24,7 @@ export default function CompetitionSheet({d,week,save,reorderRules,busy}:any){
  const sheet=d.sheets?.[week]||{rules:d.config.rules,base:d.config.base,rows:d.students.filter((s:Row)=>s.active).map((s:Row)=>({...s,counts:{},subjectCounts:{},recorded:{},score:d.config.base}))};
  const locked=d.periods.some((p:Row)=>p.week===week&&p.status==='locked');
  const rules:Rule[]=sheet.rules;
+ const visibleRules=rules.filter(r=>category==='all'||r.category===category);
  const selected=rules.find(r=>r.id===selectedRuleId)||rules[0];
  const groups:Row[]=mode==='edit'?allowed.filter(g=>g.id===groupId):d.groups;
  const report=d.reports.find((r:Row)=>r.week===week&&r.groupId===groupId);
@@ -34,7 +37,6 @@ export default function CompetitionSheet({d,week,save,reorderRules,busy}:any){
    if(needsLearningSubject(r))return subject ? (s.subjectCounts?.[r.id+'|'+subject]||'') : '';
    return s.counts[r.id]||'';
  };
- const hasKpi=(s:Row,r:Rule)=>r.kind==='speaking-total'&&inputValue(s,r)!=='';
  const preview=(s:Row)=>{
    const baseline=s.previewScore??(sheet.base+rules.reduce((n,r)=>r.kind==='speaking-total'?
      n+(s.recorded?.[r.id]?ruleScore(r,s.counts[r.id]||0):0):n+(s.counts[r.id]||0)*r.points,0));
@@ -63,8 +65,10 @@ export default function CompetitionSheet({d,week,save,reorderRules,busy}:any){
    setDraft(current=>({...current,[key(s.id,r.id)]:text}));
    setMessage('');
  };
- const cell=(s:Row,r:Rule)=>mode==='edit'?
-  <input aria-label={s.name+' - '+r.name+(needsLearningSubject(r)?' - '+(subject||'chưa chọn môn'):'')} type="number" inputMode="numeric" min="0" max={r.limit||100}
+ function paste(e:React.ClipboardEvent<HTMLInputElement>,rows:Row[],row:number,col:number){const text=e.clipboardData.getData('text');if(!/[\r\n\t]/.test(text))return;e.preventDefault();try{const parsed=countPaste(text,visibleRules.slice(col),rows.length-row,subject);setDraft(old=>{const next={...old};for(const p of parsed)next[key(rows[row+p.row].id,visibleRules[col+p.col].id)]=p.count===null?'':String(p.count);return next});setError('');setMessage('Đã dán '+parsed.length+' ô. Kiểm tra rồi lưu bảng.')}catch(err){setError((err as Error).message)}}
+ function navigate(e:React.KeyboardEvent<HTMLInputElement>,row:number,col:number){if(!['Enter','ArrowDown','ArrowUp'].includes(e.key))return;e.preventDefault();const next=row+(e.key==='ArrowUp'||e.shiftKey?-1:1);const input=e.currentTarget.closest('table')?.querySelector<HTMLInputElement>(`input[data-row="${next}"][data-col="${col}"]`);if(input&&!input.disabled)input.focus()}
+ const cell=(s:Row,r:Rule,rows:Row[],row:number,col:number)=>mode==='edit'?
+  <input data-row={row} data-col={col} onKeyDown={e=>navigate(e,row,col)} onPaste={e=>paste(e,rows,row,col)} aria-label={s.name+' - '+r.name+(needsLearningSubject(r)?' - '+(subject||'chưa chọn môn'):'')} type="number" inputMode="numeric" min="0" max={r.limit||100}
       disabled={!editable||saving||busy||(needsLearningSubject(r)&&!subject)} value={inputValue(s,r)} placeholder={r.kind==='speaking-total'?'Chưa nhập':'—'}
       onChange={e=>update(s,r,e.target.value)}/>:
   <span>{r.kind==='speaking-total'?(s.recorded?.[r.id]?(s.counts[r.id]??0):'—'):(needsLearningSubject(r)?(subject?s.subjectCounts?.[r.id+'|'+subject]||'—':'Chọn môn'):(s.counts[r.id]||'—'))}</span>;
@@ -72,9 +76,9 @@ export default function CompetitionSheet({d,week,save,reorderRules,busy}:any){
    setSaving(true);setError('');setMessage('');
    try{
      for(let i=0;i<changes.length;i+=80){
-       await save({week,groupId,cells:changes.slice(i,i+80).map(({row,rule,...x})=>x)});
+       const part=changes.slice(i,i+80);await save({week,groupId,cells:part.map(({row,rule,...x})=>x)});const keys=new Set(part.map(c=>key(c.studentId,c.ruleId,c.subject)));setDraft(old=>Object.fromEntries(Object.entries(old).filter(([k])=>!keys.has(k))));
      }
-     setDraft({});setMessage('Đã lưu bảng. Gửi báo cáo tổ để giáo viên duyệt.');
+     setDraft({});setMessage('Đã lưu bảng. Gửi báo cáo để giáo viên hoặc cán sự có quyền duyệt.');
    }catch(e){setError((e as Error).message)}finally{setSaving(false)}
  }
  async function moveRule(id:string,position:number){
@@ -89,42 +93,34 @@ export default function CompetitionSheet({d,week,save,reorderRules,busy}:any){
  }
  const renderScore=(s:Row)=>mode==='edit'?preview(s):s.score;
  return <section className="card section excel-section" id="competition-sheet">
-  <div className="section-head"><div><h3><Table2 size={18}/>Bảng thi đua tổ</h3><p>Nhập số lần theo từng quy tắc. Trên điện thoại, chọn một quy tắc để nhập cho cả tổ, không phải kéo bảng ngang.</p></div>
-   <div className="sheet-tabs"><button className={mode==='view'?'selected':''} onClick={()=>setMode('view')}><Table2 size={15}/>Xem {d.groups.length} tổ</button>{editor&&<button className={mode==='edit'?'selected':''} onClick={()=>setMode('edit')}><SquarePen size={15}/>Nhập điểm</button>}</div>
+  <div className="section-head"><div><h3><Table2 size={18}/>Bảng Excel · Toàn bộ quy tắc thi đua</h3><p>Cùng một bảng trên điện thoại và laptop. Bấm ô để nhập; vuốt ngang xem các quy tắc, tên học sinh luôn được giữ bên trái.</p></div>
+   <div className="sheet-tabs"><button className={mode==='view'?'selected':''} disabled={saving||busy} onClick={()=>setMode('view')}><Table2 size={15}/>Xem {d.groups.length} tổ</button>{editor&&<button className={mode==='edit'?'selected':''} disabled={saving||busy} onClick={()=>setMode('edit')}><SquarePen size={15}/>Nhập trực tiếp</button>}</div>
   </div>
   <div className="sheet-toolbar">{mode==='edit'?<>
-    <select aria-label="Tổ nhập thi đua" value={groupId} onChange={e=>{if(Object.keys(draft).length&&!window.confirm('Chuyển tổ sẽ bỏ các ô chưa lưu. Tiếp tục?'))return;setDraft({});setGroupId(e.target.value);setError('')}}>{allowed.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}</select>
-    <select className="subject-picker" aria-label="Chọn môn học để nhập và xem điểm thuộc bài" value={subject} onChange={e=>setSubject(e.target.value)}><option value="">Chọn môn học…</option>{classSubjects.map(name=><option value={name} key={name}>{name}</option>)}</select>
+    <select aria-label="Tổ nhập thi đua" disabled={saving||busy} value={groupId} onChange={e=>{if(Object.keys(draft).length&&!window.confirm('Chuyển tổ sẽ bỏ các ô chưa lưu. Tiếp tục?'))return;setDraft({});setGroupId(e.target.value);setError('')}}>{allowed.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}</select>
+    {visibleRules.some(needsLearningSubject)&&<select className="subject-picker" aria-label="Chọn môn học để nhập và xem điểm thuộc bài" value={subject} disabled={saving||busy} onChange={e=>setSubject(e.target.value)}><option value="">Chọn môn học…</option>{classSubjects.map(name=><option value={name} key={name}>{name}</option>)}</select>}
     <button className="btn primary" disabled={!editable||!changes.length||saving||busy} onClick={commit}><Save size={15}/>{saving?'Đang lưu…': 'Lưu '+changes.length+' ô'}</button>
-   </>:<><span><LockKeyhole size={15}/>Chế độ xem · Học sinh thường không được sửa bảng</span><select className="subject-picker" aria-label="Chọn môn để xem điểm thuộc bài" value={subject} onChange={e=>setSubject(e.target.value)}><option value="">Chọn môn học…</option>{classSubjects.map(name=><option key={name} value={name}>{name}</option>)}</select></>}</div>
+   </>:<><span><LockKeyhole size={15}/>Chế độ xem · Học sinh thường không được sửa bảng</span>{visibleRules.some(needsLearningSubject)&&<select className="subject-picker" aria-label="Chọn môn để xem điểm thuộc bài" value={subject} disabled={saving||busy} onChange={e=>setSubject(e.target.value)}><option value="">Chọn môn học…</option>{classSubjects.map(name=><option key={name} value={name}>{name}</option>)}</select>}</>}</div>
+  <div className="sheet-category-filter"><label>Nhóm cột<select aria-label="Lọc nhóm quy tắc thi đua" value={category} onChange={e=>setCategory(e.target.value)}><option value="all">Tất cả quy tắc</option>{[['attendance','Chuyên cần'],['absence','Nghỉ / bỏ tiết'],['learning','Học tập'],['speaking','Phát biểu'],['uniform','Đồng phục'],['discipline','Nề nếp'],['movement','Phong trào']].map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></label><button className="text-btn" onClick={()=>document.getElementById('academic-sheet')?.scrollIntoView({behavior:'smooth'})}>Nhập điểm 0–10 theo môn</button><span>{visibleRules.length} cột · Enter / ↑↓ chuyển dòng · Tab chuyển ô · Dán vùng số lần từ Excel</span></div>
   {mode==='edit'&&!editable&&<div className="sheet-hint"><Info size={16}/>{locked?'Tuần đã chốt, bảng chỉ được xem.':'Tổ đã gửi báo cáo. Giáo viên cần trả lại báo cáo trước khi sửa.'}</div>}
   {error&&<div className="error sheet-message">{error}</div>}
   {message&&<div className="info sheet-message"><CheckCircle2 size={16}/>{message}</div>}
-  {d.teacher&&!locked&&<div className="excel-order-bar"><span><Table2 size={15}/>Sắp xếp cột theo ý muốn: kéo tiêu đề trên máy tính, hoặc chọn quy tắc và vị trí bất kỳ.</span><label>Quy tắc<select aria-label="Quy tắc cần di chuyển" value={selected?.id||''} onChange={e=>setSelectedRuleId(e.target.value)}>{rules.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></label><label>Chuyển tới<select aria-label="Chuyển quy tắc đến vị trí" disabled={moving||busy} value={selected?rules.findIndex(r=>r.id===selected.id):0} onChange={e=>{if(selected)void moveRule(selected.id,Number(e.target.value))}}>{rules.map((r,i)=><option key={r.id} value={i}>Cột {i+1}</option>)}</select></label></div>}
-  {selected&&<div className="mobile-sheet-filter"><label htmlFor="mobile-rule-select">Chọn quy tắc đang nhập</label><select id="mobile-rule-select" value={selected.id} onChange={e=>setSelectedRuleId(e.target.value)}>{rules.map((r:Rule)=><option value={r.id} key={r.id}>{r.name}</option>)}</select><small>{needsLearningSubject(selected)&&!subject?'Chọn môn học ở phía trên trước khi nhập điểm thuộc bài / không thuộc bài.':selected.kind==='speaking-total'?'Nhập tổng số lần phát biểu trong cả tuần. Để trống nếu chưa ghi nhận; nhập 0 nếu thực sự không phát biểu.':'Chỉ hiện một cột để dễ thao tác. Đổi quy tắc không làm mất ô chưa lưu.'}</small></div>}
+  {d.teacher&&!locked&&<details className="excel-order-disclosure"><summary>Sắp xếp vị trí cột (giáo viên)</summary><div className="excel-order-bar"><span><Table2 size={15}/>Sắp xếp cột theo ý muốn: kéo tiêu đề trên máy tính, hoặc chọn quy tắc và vị trí bất kỳ.</span><label>Quy tắc<select aria-label="Quy tắc cần di chuyển" value={selected?.id||''} onChange={e=>setSelectedRuleId(e.target.value)}>{rules.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></label><label>Chuyển tới<select aria-label="Chuyển quy tắc đến vị trí" disabled={moving||busy} value={selected?rules.findIndex(r=>r.id===selected.id):0} onChange={e=>{if(selected)void moveRule(selected.id,Number(e.target.value))}}>{rules.map((r,i)=><option key={r.id} value={i}>Cột {i+1}</option>)}</select></label></div></details>}
   {groups.map((g,gi)=>{
    const rows:Row[]=sheet.rows.filter((s:Row)=>s.groupId===g.id);
    return <div className="excel-group" key={g.id}>
     <div className={'excel-group-title zone-'+gi%4}><b>{g.name}</b><span>{rows.length} thành viên</span><small>{mode==='edit'?'Ô chưa nhập không phát sinh điểm':'Chỉ hiển thị số lần đã được duyệt'}</small></div>
     <div className="excel-scroll" role="region" aria-label={'Bảng thi đua '+g.name} tabIndex={0}>
      <table className="excel-table">
-      <thead><tr className="excel-letters"><th>№</th><th>A</th>{rules.map((r:Rule,i:number)=><th key={r.id}>{i+2}</th>)}<th>Σ</th><th>✓</th></tr>
-       <tr><th>STT</th><th className="student-column">Học sinh</th>{rules.map(r=><th key={r.id} draggable={!!d.teacher&&!locked&&!moving} onDragStart={e=>{setDragRule(r.id);e.dataTransfer.setData('text/plain',r.id);e.dataTransfer.effectAllowed='move'}} onDragEnd={()=>setDragRule('')} onDragOver={e=>{if(d.teacher)e.preventDefault()}} onDrop={e=>{e.preventDefault();const source=e.dataTransfer.getData('text/plain')||dragRule;void moveRule(source,rules.findIndex(x=>x.id===r.id))}} className={(r.kind==='speaking-total'?'kpi-col':r.points>=0?'plus-col':'minus-col')+(dragRule===r.id?' rule-being-dragged':'')} title={d.teacher?'Kéo để di chuyển: '+r.name:r.name}><span>{r.name}</span><small>{r.kind==='speaking-total'?'Theo mốc KPI':(r.points>0?'+':'')+r.points+' đ/lần'}</small></th>)}<th className="total-column">Tạm tính</th><th className="total-column">Đã duyệt</th></tr>
-      </thead><tbody>{rows.map((s,i)=><tr key={s.id}><td>{i+1}</td><td className="student-column"><b>{s.name}</b></td>{rules.map(r=>{
+      <thead><tr className="excel-letters"><th>№</th><th>A</th>{visibleRules.map((r:Rule,i:number)=><th key={r.id}>{i+2}</th>)}<th>Σ</th><th>✓</th></tr>
+       <tr><th>STT</th><th className="student-column">Học sinh</th>{visibleRules.map(r=><th key={r.id} draggable={!!d.teacher&&!locked&&!moving} onDragStart={e=>{setDragRule(r.id);e.dataTransfer.setData('text/plain',r.id);e.dataTransfer.effectAllowed='move'}} onDragEnd={()=>setDragRule('')} onDragOver={e=>{if(d.teacher)e.preventDefault()}} onDrop={e=>{e.preventDefault();const source=e.dataTransfer.getData('text/plain')||dragRule;void moveRule(source,rules.findIndex(x=>x.id===r.id))}} className={(r.kind==='speaking-total'?'kpi-col':r.points>=0?'plus-col':'minus-col')+(dragRule===r.id?' rule-being-dragged':'')} title={d.teacher?'Kéo để di chuyển: '+r.name:r.name}><span>{r.name}</span><small>{r.kind==='speaking-total'?'Theo mốc KPI':(r.points>0?'+':'')+r.points+' đ/lần'}</small></th>)}<th className="total-column">Tạm tính</th><th className="total-column">Đã duyệt</th></tr>
+      </thead><tbody>{rows.map((s,i)=><tr key={s.id}><td>{i+1}</td><td className="student-column"><b>{s.name}</b></td>{visibleRules.map((r,col)=>{
        const v=inputValue(s,r), delta=r.kind==='speaking-total'&&v!==''?ruleScore(r,Number(v)):Number(v||0)*r.points;
-       return <td key={r.id} className={(delta>0?'has-plus':delta<0?'has-minus':'')+(draft[key(s.id,r.id)]!==undefined?' changed':'')}>{cell(s,r)}</td>
-      })}<td className="total-column"><b>{renderScore(s)}</b></td><td className="total-column approved-score">{s.score}</td></tr>)}{!rows.length&&<tr><td colSpan={rules.length+4} className="sheet-empty">Tổ chưa có thành viên. Giáo viên xếp chỗ để chia tổ.</td></tr>}</tbody>
-      <tfoot><tr><td/><td className="student-column">Tổng</td>{rules.map(r=><td key={r.id}>{rows.reduce((n,s)=>n+(Number(inputValue(s,r))||0),0)||'—'}</td>)}<td className="total-column">{rows.reduce((n,s)=>n+renderScore(s),0)}</td><td className="total-column">{rows.reduce((n,s)=>n+s.score,0)}</td></tr></tfoot>
+       return <td key={r.id} className={(delta>0?'has-plus':delta<0?'has-minus':'')+(draft[key(s.id,r.id)]!==undefined?' changed':'')}>{cell(s,r,rows,i,col)}</td>
+      })}<td className="total-column"><b>{renderScore(s)}</b></td><td className="total-column approved-score">{s.score}</td></tr>)}{!rows.length&&<tr><td colSpan={visibleRules.length+4} className="sheet-empty">Tổ chưa có thành viên. Giáo viên xếp chỗ để chia tổ.</td></tr>}</tbody>
+      <tfoot><tr><td/><td className="student-column">Tổng</td>{visibleRules.map(r=><td key={r.id}>{rows.reduce((n,s)=>n+(Number(inputValue(s,r))||0),0)||'—'}</td>)}<td className="total-column">{rows.reduce((n,s)=>n+renderScore(s),0)}</td><td className="total-column">{rows.reduce((n,s)=>n+s.score,0)}</td></tr></tfoot>
      </table>
     </div>
-    {selected&&<div className="mobile-sheet-cards">{rows.map((s,i)=>{
-      const v=inputValue(s,selected),delta=selected.kind==='speaking-total'&&v!==''?ruleScore(selected,Number(v)):Number(v||0)*selected.points;
-      return <div className="mobile-sheet-row" key={s.id}>
-       <div className="mobile-student"><small>{i+1}</small><b>{s.name}</b><span>Điểm: {renderScore(s)}</span></div>
-       <div className="mobile-entry">{cell(s,selected)}</div>
-       {selected.kind==='speaking-total'&&<div className={'mobile-kpi-status '+(delta<0?'is-violation':delta>0?'is-reward':'')}>{hasKpi(s,selected)?speakingKpiLabel(selected,Number(v)):'Chưa ghi nhận số lần phát biểu'}</div>}
-      </div>;
-    })}{!rows.length&&<p className="sheet-empty">Chưa có học sinh trong tổ này.</p>}</div>}
    </div>;
   })}
   <div className="sheet-legend"><span><i className="legend-plus"/>Điểm cộng</span><span><i className="legend-minus"/>Điểm trừ</span><span>Chọn môn học để lọc và tra cứu điểm thuộc bài / không thuộc bài</span></div>

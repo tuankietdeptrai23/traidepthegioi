@@ -141,3 +141,11 @@ Giáo viên/admin chỉnh mốc trong Cài đặt lớp → Mốc điểm thuộ
 Dữ liệu dùng bảng entries hiện có với ruleId có tiền tố `academic-sheet/<lượt>/`; không có migration hay reset dữ liệu. Sửa/xóa ô đánh dấu bản cũ rejected và giữ lịch sử. Môn, lượt và tổ khác không bị ghi đè; ghi nhận số lần trong bảng cũ được giữ riêng để tránh thao tác sửa ô thay mất điểm môn học. Giáo viên/cán sự vẫn duyệt báo cáo; tuần đã chốt và báo cáo đã gửi khóa nhập như trước. Xem trước tạm tính dùng delta của các ghi nhận để bao gồm cả điểm từ bảng môn học.
 
 Kiểm tra: 71 kiểm tra tích hợp và 7 kiểm tra nhập danh sách. Bao gồm ranh giới mốc, 0/ô trống/số thập phân, dữ liệu dán, quyền theo tổ/lớp, lưu từng môn/lượt, sửa/xóa giữ lịch sử, cấu hình không đổi điểm cũ và khóa theo báo cáo/tuần. UI thử bằng dữ liệu giả: nhập sáu mức điểm, tự phân cột, dán nhiều dòng, Enter chuyển dòng và giáo viên thay mốc.
+
+### Bảng thi đua chung trên điện thoại và laptop
+
+Toàn bộ quy tắc được nhập trực tiếp trên cùng bảng Excel dùng để xem thi đua, không chuyển sang thẻ nhập riêng trên điện thoại. Bảng có tên học sinh cố định bên trái, cuộn ngang, lọc nhóm cột, Enter / mũi tên chuyển dòng, dán vùng số lần từ Excel và lưu theo lô. Khi một lô lỗi, các ô đã lưu được gỡ khỏi nháp để lần thử tiếp theo không gửi lại chúng. Chế độ xem chung 4 tổ không có ô chỉnh sửa. Điểm kiểm tra 0–10 có bảng theo môn và mốc thuộc bài riêng ở ngay cùng trang, tránh nhầm điểm kiểm tra với số lần vi phạm.
+
+Giáo viên chốt tuần sau khi đủ báo cáo được duyệt: kết quả và lịch trực tuần sau được lưu trong cùng giao dịch. Giao diện có dự kiến lịch dựa trên điểm đã duyệt. Bộ phân công bảo đảm đủ Quét lớp, Lau bảng, Lau bàn, Đổ rác kể cả tổ ít người; luân phiên vị trí, ưu tiên nam đổ rác nếu cấu hình, thêm một lượt cho học sinh có vi phạm đã duyệt và loại người đã lưu trữ khỏi phân công mới. Lịch cũ, tuần đã chốt và tài khoản không bị đặt lại.
+
+Kiểm tra cuối: 73 kiểm tra tích hợp + 7 kiểm tra danh sách; TypeScript và build production. Có kiểm tra vùng dán, số 0 KPI/ô trống, công thức không hợp lệ, phạm vi tổ/môn, phân công đủ nhiệm vụ, ưu tiên đổ rác, loại học sinh lưu trữ, khóa tuần và chống tạo lịch trùng. UI thử ở khung điện thoại 390 px: tổ trưởng dán/lưu vùng 2×2 và chuyển sang xem 4 tổ không còn input.
