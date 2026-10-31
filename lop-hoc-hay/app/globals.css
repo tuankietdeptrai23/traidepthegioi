@@ -93,3 +93,5 @@
  .kpi-base>label,.kpi-tier>label{min-width:100px}
  .kpi-base input,.kpi-tier input{max-width:none}
 }
+
+@media (max-width:700px){.rule-delete{grid-column:3;grid-row:1}}
