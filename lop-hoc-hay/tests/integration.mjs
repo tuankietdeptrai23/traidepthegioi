@@ -444,4 +444,8 @@ await test('Admin correction changes archived-week counts with the original rule
  await send('unlockWeekForCorrection',{week:e.week,reason:'Fix mistaken phone occurrence'});await send('correctWeekEntry',{id:e.id,count:e.count+1,note:'Corrected count',reason:'Source log confirms one extra occurrence'});let d=(await state(classId)).detail;assert.equal(d.entries.find(x=>x.id===e.id).status,'rejected');const replacement=d.entries.find(x=>x.week===e.week&&x.ruleId==='phone'&&x.status==='pending');assert.equal(replacement.delta,oldRule.points*(e.count+1));for(const r of d.reports.filter(r=>r.week===e.week))await send('reviewReport',{id:r.id,status:'approved'});await send('lockWeek',{week:e.week});d=(await state(classId)).detail;assert.equal(d.publishedStandings[e.week].find(g=>g.id===e.groupId).score,oldScore+oldRule.points);assert.ok(d.weekArchives.filter(a=>a.week===e.week).length>=2);
 });
 
+await test('State tolerates legacy plain-text settings and malformed care records without exposing them',async()=>{
+ as('owner@example.com');sqlite.prepare('INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)').run('legacy-hotfix-timestamp','2026-10-31T20:28:28.000Z');sqlite.prepare('INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)').run('student-care:'+classId+':request:legacy-invalid','legacy plain text');const d=(await state(classId)).detail;assert.ok(d.students.length);assert.ok(!d.careRecords.some(r=>r.id==='legacy-invalid'));sqlite.prepare('DELETE FROM settings WHERE key IN (?,?)').run('legacy-hotfix-timestamp','student-care:'+classId+':request:legacy-invalid');
+});
+
 console.log(`\n${passed} integration checks passed.`);sqlite.close();
