@@ -12,6 +12,8 @@ export type Rule = {
 };
 export type AcademicBand = {min:number;points:number;kind:'learned'|'unlearned'};
 export type Config = {
+    academicCalendar?: {anchorWeek:string;anchorNumber:number;excludedWeeks:string[];monthsPerTerm:number};
+    learningPoints?: {initial:number;penalties:Record<string,number>};
     reportMode?: 'weekly' | 'daily';
     reportDays?: number[];
     speakingOpenDates?: string[];
@@ -129,6 +131,8 @@ export function validateConfig(c: any): Config {
     if(c.reportDays!==undefined&&(!Array.isArray(c.reportDays)||!c.reportDays.length||c.reportDays.some((d:any)=>!Number.isInteger(d)||d<1||d>6)||new Set(c.reportDays).size!==c.reportDays.length))throw Error('Chọn ngày báo cáo từ thứ Hai đến thứ Bảy');
     if(c.speakingOpenDates!==undefined&&(!Array.isArray(c.speakingOpenDates)||c.speakingOpenDates.length>60||c.speakingOpenDates.some((d:any)=>typeof d!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(d)||!Number.isFinite(Date.parse(d+'T00:00:00Z'))||new Date(d+'T00:00:00Z').toISOString().slice(0,10)!==d)))throw Error('Ngày mở phát biểu không hợp lệ');
     if(c.rules.some((r:any)=>r.serious!==undefined&&typeof r.serious!=='boolean'))throw Error('Cờ cảnh báo nghiêm trọng phải là có / không.');
+    if(c.academicCalendar!==undefined){const a=c.academicCalendar;const validWeek=(s:any)=>typeof s==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(s)&&Number.isFinite(Date.parse(s+'T00:00:00Z'))&&new Date(s+'T00:00:00Z').toISOString().slice(0,10)===s&&monday(new Date(s))===s;if(!a||!validWeek(a.anchorWeek)||!Number.isInteger(a.anchorNumber)||a.anchorNumber<1||a.anchorNumber>60||!Number.isInteger(a.monthsPerTerm)||a.monthsPerTerm<1||a.monthsPerTerm>6||!Array.isArray(a.excludedWeeks)||a.excludedWeeks.length>80||a.excludedWeeks.some((w:any)=>!validWeek(w))||new Set(a.excludedWeeks).size!==a.excludedWeeks.length||a.excludedWeeks.includes(a.anchorWeek))throw Error('Lịch tuần học: chọn thứ Hai, số tuần 1–60, kỳ 1–6 tháng và các tuần nghỉ hợp lệ.');}
+    if(c.learningPoints!==undefined){const p=c.learningPoints;if(!p||!Number.isInteger(p.initial)||p.initial<1||p.initial>10000||!p.penalties||Array.isArray(p.penalties)||typeof p.penalties!=='object'||Object.keys(p.penalties).length>101||Object.entries(p.penalties).some(([k,v]:[string,any])=>k!=='unlearned'&&!c.rules.some((r:Rule)=>r.id===k)||!Number.isInteger(v)||v<0||v>1000))throw Error('Điểm Học tập: điểm ban đầu từ 1–10000, mức trừ từ 0–1000 và thuộc quy tắc của lớp.');}
     const ids = new Set();
     for (const r of c.rules) {
         if (!r.id || ids.has(r.id) || typeof r.name !== 'string' || !r.name.trim() || r.name.length > 150 || !['attendance', 'absence', 'learning', 'speaking', 'uniform', 'discipline', 'movement'].includes(r.category) || !Number.isInteger(r.points) || Math.abs(r.points) > 1000 || (r.limit !== undefined && (!Number.isInteger(r.limit) || r.limit < 1 || r.limit > 100)))
