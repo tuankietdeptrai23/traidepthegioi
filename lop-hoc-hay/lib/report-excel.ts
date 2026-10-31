@@ -26,8 +26,8 @@ function zip(files:{path:string;content:string}[]):Uint8Array{
  const parts:number[]=[],directory:number[]=[];
  for(const file of files){
    const offset=parts.length,filename=encoder.encode(file.path),content=encoder.encode(file.content),crc=crc32(content);
-   put32(parts,0x04034b50);put16(parts,20);put16(parts,0);put16(parts,0);put16(parts,0);put16(parts,0);put32(parts,crc);put32(parts,content.length);put32(parts,content.length);put16(parts,filename.length);put16(parts,0);parts.push(...filename,...content);
-   put32(directory,0x02014b50);put16(directory,20);put16(directory,20);put16(directory,0);put16(directory,0);put16(directory,0);put16(directory,0);put32(directory,crc);put32(directory,content.length);put32(directory,content.length);put16(directory,filename.length);put16(directory,0);put16(directory,0);put16(directory,0);put16(directory,0);put32(directory,0);put32(directory,offset);directory.push(...filename);
+   put32(parts,0x04034b50);put16(parts,20);put16(parts,0);put16(parts,0);put16(parts,0);put16(parts,0);put32(parts,crc);put32(parts,content.length);put32(parts,content.length);put16(parts,filename.length);put16(parts,0);for(const byte of filename)parts.push(byte);for(const byte of content)parts.push(byte);
+   put32(directory,0x02014b50);put16(directory,20);put16(directory,20);put16(directory,0);put16(directory,0);put16(directory,0);put16(directory,0);put32(directory,crc);put32(directory,content.length);put32(directory,content.length);put16(directory,filename.length);put16(directory,0);put16(directory,0);put16(directory,0);put16(directory,0);put32(directory,0);put32(directory,offset);for(const byte of filename)directory.push(byte);
  }
  const offset=parts.length;parts.push(...directory);put32(parts,0x06054b50);put16(parts,0);put16(parts,0);put16(parts,files.length);put16(parts,files.length);put32(parts,directory.length);put32(parts,offset);put16(parts,0);
  return new Uint8Array(parts);
