@@ -9,7 +9,7 @@ function sheetXml(sheet:ReportSheet){
  const max=Math.max(1,...sheet.rows.map(r=>r.length));
  const cols=(sheet.widths||Array(max).fill(18)).map((w,i)=>'<col min="'+(i+1)+'" max="'+(i+1)+'" width="'+Math.max(8,Math.min(55,Math.floor(w)))+'" customWidth="1"/>').join('');
  const titles=new Set(sheet.titleRows||[0,1]);
- const rows=sheet.rows.map((values,i)=>'<row r="'+(i+1)+'" ht="'+(titles.has(i)?(i===0?34:25):Math.min(100,Math.max(28,...values.map((v,j)=>Math.ceil(String(v??'').length/((sheet.widths?.[j]||18)-2))*14+10))))+'" customHeight="1">'+values.map((v,j)=>{
+ const rows=sheet.rows.map((values,i)=>'<row r="'+(i+1)+'" ht="'+(titles.has(i)?(i===0?34:25):Math.min(409,Math.max(28,...values.map((v,j)=>String(v??'').split('\n').reduce((n,line)=>n+Math.max(1,Math.ceil(line.length/((sheet.widths?.[j]||18)-2))),0)*14+10))))+'" customHeight="1">'+values.map((v,j)=>{
    if(v===null||v===undefined||v==='')return '';
    const ref=name(j)+(i+1),style=titles.has(i)?(i===0?1:3):i===(sheet.headerRow??3)?2:0;
    if(typeof v==='number'&&Number.isFinite(v))return '<c r="'+ref+'" s="'+style+'"><v>'+v+'</v></c>';

@@ -2,12 +2,12 @@
 import {useEffect,useState} from 'react';
 import {Table2,SquarePen,Save,LockKeyhole,CheckCircle2,Info} from 'lucide-react';
 import {countPaste} from '@/lib/sheet-input';
-import {canReport,ruleScore,classSubjects,needsLearningSubject,type Row,type Rule} from '@/lib/domain';
+import {canReport,canViewCompetitionGroup,ruleScore,classSubjects,needsLearningSubject,type Row,type Rule} from '@/lib/domain';
 
-export default function CompetitionSheet({d,week,reportDate='',save,reorderRules,busy}:any){
+export default function CompetitionSheet({d,week,reportDate='',save,reorderRules,busy,openAcademic}:any){
  const roles:string[]=d.roles||[];
  const own=d.students.find((s:Row)=>s.id===d.ownId);
- const editor=d.teacher||roles.length>0;
+ const editor=d.teacher||canReport(roles,own?.groupId||'',own?.groupId||'');
  const allowed:Row[]=d.groups.filter((g:Row)=>d.teacher||canReport(roles,own?.groupId||'',g.id));
  const [mode,setMode]=useState<'edit'|'view'>(editor?'edit':'view');
  const [groupId,setGroupId]=useState(allowed.find(g=>g.id===own?.groupId)?.id||allowed[0]?.id||'');
@@ -27,7 +27,7 @@ export default function CompetitionSheet({d,week,reportDate='',save,reorderRules
  const rules:Rule[]=sheet.rules;
  const visibleRules=rules.filter(r=>category==='all'||r.category===category);
  const selected=rules.find(r=>r.id===selectedRuleId)||rules[0];
- const groups:Row[]=mode==='edit'?allowed.filter(g=>g.id===groupId):d.groups;
+ const groups:Row[]=mode==='edit'?allowed.filter(g=>g.id===groupId):d.groups.filter((g:Row)=>canViewCompetitionGroup(d.teacher,roles,own?.groupId||'',g.id));
  const report=d.reports.find((r:Row)=>r.week===week&&r.groupId===groupId&&(r.reportDate||'')===reportDate);
  const editable=editor&&mode==='edit'&&!locked&&(!report||report.status==='returned');
  const key=(id:string,rid:string,chosen=subject)=>id+'|'+rid+(needsLearningSubject(rules.find(r=>r.id===rid)!)?'|'+chosen:'');
@@ -95,14 +95,14 @@ export default function CompetitionSheet({d,week,reportDate='',save,reorderRules
  const renderScore=(s:Row)=>mode==='edit'?preview(s):s.score;
  return <section className="card section excel-section" id="competition-sheet">
   <div className="section-head"><div><h3><Table2 size={18}/>Bảng Excel · Toàn bộ quy tắc thi đua</h3><p>Cùng một bảng trên điện thoại và laptop. Bấm ô để nhập; vuốt ngang xem các quy tắc, tên học sinh luôn được giữ bên trái.</p></div>
-   <div className="sheet-tabs"><button className={mode==='view'?'selected':''} disabled={saving||busy} onClick={()=>setMode('view')}><Table2 size={15}/>Xem {d.groups.length} tổ</button>{editor&&<button className={mode==='edit'?'selected':''} disabled={saving||busy} onClick={()=>setMode('edit')}><SquarePen size={15}/>Nhập trực tiếp</button>}</div>
+   <div className="sheet-tabs"><button className={mode==='view'?'selected':''} disabled={saving||busy} onClick={()=>setMode('view')}><Table2 size={15}/>{d.teacher||roles.some((r:string)=>['leader','study','discipline','movement'].includes(r))?'Xem cả lớp':'Xem tổ mình'}</button>{editor&&<button className={mode==='edit'?'selected':''} disabled={saving||busy} onClick={()=>setMode('edit')}><SquarePen size={15}/>Nhập trực tiếp</button>}</div>
   </div>
   <div className="sheet-toolbar">{mode==='edit'?<>
     <select aria-label="Tổ nhập thi đua" disabled={saving||busy} value={groupId} onChange={e=>{if(Object.keys(draft).length&&!window.confirm('Chuyển tổ sẽ bỏ các ô chưa lưu. Tiếp tục?'))return;setDraft({});setGroupId(e.target.value);setError('')}}>{allowed.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}</select>
     {visibleRules.some(needsLearningSubject)&&<select className="subject-picker" aria-label="Chọn môn học để nhập và xem điểm thuộc bài" value={subject} disabled={saving||busy} onChange={e=>setSubject(e.target.value)}><option value="">Chọn môn học…</option>{classSubjects.map(name=><option value={name} key={name}>{name}</option>)}</select>}
     <button className="btn primary" disabled={!editable||!changes.length||saving||busy} onClick={commit}><Save size={15}/>{saving?'Đang lưu…': 'Lưu '+changes.length+' ô'}</button>
    </>:<><span><LockKeyhole size={15}/>Chế độ xem · Học sinh thường không được sửa bảng</span>{visibleRules.some(needsLearningSubject)&&<select className="subject-picker" aria-label="Chọn môn để xem điểm thuộc bài" value={subject} disabled={saving||busy} onChange={e=>setSubject(e.target.value)}><option value="">Chọn môn học…</option>{classSubjects.map(name=><option key={name} value={name}>{name}</option>)}</select>}</>}</div>
-  <div className="sheet-category-filter"><label>Nhóm cột<select aria-label="Lọc nhóm quy tắc thi đua" value={category} onChange={e=>setCategory(e.target.value)}><option value="all">Tất cả quy tắc</option>{[['attendance','Chuyên cần'],['absence','Nghỉ / bỏ tiết'],['learning','Học tập'],['speaking','Phát biểu'],['uniform','Đồng phục'],['discipline','Nề nếp'],['movement','Phong trào']].map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></label><button className="text-btn" onClick={()=>document.getElementById('academic-sheet')?.scrollIntoView({behavior:'smooth'})}>Nhập điểm 0–10 theo môn</button><span>{visibleRules.length} cột · Enter / ↑↓ chuyển dòng · Tab chuyển ô · Dán vùng số lần từ Excel</span></div>
+  <div className="sheet-category-filter"><label>Nhóm cột<select aria-label="Lọc nhóm quy tắc thi đua" value={category} onChange={e=>setCategory(e.target.value)}><option value="all">Tất cả quy tắc</option>{[['attendance','Chuyên cần'],['absence','Nghỉ / bỏ tiết'],['learning','Học tập'],['speaking','Phát biểu'],['uniform','Đồng phục'],['discipline','Nề nếp'],['movement','Phong trào']].map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></label><button className="text-btn" onClick={()=>openAcademic?openAcademic():document.getElementById('academic-sheet')?.scrollIntoView({behavior:'smooth'})}>Nhập điểm 0–10 theo môn</button><span>{visibleRules.length} cột · Enter / ↑↓ chuyển dòng · Tab chuyển ô · Dán vùng số lần từ Excel</span></div>
   {mode==='edit'&&!editable&&<div className="sheet-hint"><Info size={16}/>{locked?'Tuần đã chốt, bảng chỉ được xem.':'Tổ đã gửi báo cáo. Giáo viên cần trả lại báo cáo trước khi sửa.'}</div>}
   {error&&<div className="error sheet-message">{error}</div>}
   {message&&<div className="info sheet-message"><CheckCircle2 size={16}/>{message}</div>}
