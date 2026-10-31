@@ -1,0 +1,3 @@
+import {careProof,HttpError} from '@/lib/server';
+export const dynamic='force-dynamic';
+export async function GET(req:Request){try{const u=new URL(req.url),proof=await careProof(u.searchParams.get('classId')||'',u.searchParams.get('id')||'');if(!proof.startsWith('data:image/jpeg;base64,'))return Response.json({error:'Minh chứng là liên kết, mở trong hồ sơ.'},{status:400});const raw=atob(proof.split(',')[1]),data=Uint8Array.from(raw,c=>c.charCodeAt(0));return new Response(data.buffer,{headers:{'Content-Type':'image/jpeg','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'}})}catch(e){return Response.json({error:e instanceof HttpError?e.message:'Không tải được ảnh.'},{status:e instanceof HttpError?e.status:500,headers:{'Cache-Control':'no-store'}})}}
