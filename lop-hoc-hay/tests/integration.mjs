@@ -231,6 +231,47 @@ await test('Treasurer creates collection, records partial receipts, prevents exc
  await send('closeFundCollection',{id:c.id,status:'closed'});
  await denied(()=>send('recordFundCollections',{collectionId:c.id,date:'2026-11-04',payments:[{studentId:s2.id,amount:1}]}),409);
 });
+await test('Treasurer can independently request collections, collect money and correct the ledger',async()=>{
+  sqlite.prepare('UPDATE students SET roles=? WHERE id=?').run(JSON.stringify(['treasurer']),s4.id);
+  as('s4@example.com');
+  await send('createFundCollection',{title:'Quỹ trực nhật',description:'Giấy lau bảng',amount:20000,dueDate:'2026-12-01'});
+  let d=(await state(classId)).detail;
+  const c=d.fundCollections.find(x=>x.title==='Quỹ trực nhật');
+  assert.ok(c);assert.equal(d.notices.some(n=>n.title.includes('Quỹ trực nhật')),true);
+  await send('recordFundCollections',{collectionId:c.id,date:'2026-11-12',payments:[{studentId:s1.id,amount:10000}]});
+  await send('addFund',{type:'expense',amount:5000,date:'2026-11-12',description:'Mua bút viết bảng'});
+  d=(await state(classId)).detail;
+  assert.equal(d.fundCollections.find(x=>x.id===c.id).paid,10000);
+  assert.equal(d.funds.find(x=>x.description==='Mua bút viết bảng').status,'approved');
+  const receipt=d.fundCollections.find(x=>x.id===c.id).payments.find(x=>x.studentId===s1.id);
+  await send('reverseFund',{id:receipt.id,reason:'Nhập nhầm người'});
+  assert.equal((await state(classId)).detail.fundCollections.find(x=>x.id===c.id).paid,0);
+  as('s2@example.com');await denied(()=>send('closeFundCollection',{id:c.id,status:'closed'}),403);
+});
+await test('Duty planner does not duplicate teacher assignments or exceed daily task quota',async()=>{
+ const config={...structuredClone(domain.defaultConfig),timetable:[{weekday:1,subjects:['Toán']}],lastDutyDays:1};
+ const students=Array.from({length:16},(_,i)=>({id:'p'+i,groupId:i<8?'a':'b',active:1,roles:'[]'}));
+ const existing=[{studentId:'p2',date:'2027-03-08',task:'Trực lớp'},{studentId:'p3',date:'2027-03-08',task:'Lau bảng'}];
+ const entries=students.slice(4,14).map(x=>({studentId:x.id,count:1,delta:-5,status:'approved'}));
+ const roster=domain.dutyPlan({standings:[{id:'a',count:8,score:200},{id:'b',count:8,score:150}],students,entries},'2027-03-01',config,existing);
+ const onMonday=roster.filter(x=>x.date==='2027-03-08');
+ assert.ok(!onMonday.some(x=>x.studentId==='p2'||x.studentId==='p3'));
+ assert.equal(onMonday.filter(x=>x.task==='Trực lớp').length,3);
+ assert.equal(onMonday.filter(x=>x.task==='Lau bảng').length,0);
+ assert.equal(onMonday.filter(x=>x.task==='Đổ rác').length,1);
+ assert.equal(new Set(onMonday.map(x=>x.studentId)).size,onMonday.length);
+});
+await test('Movement coordinator edits and archives open activities, but cannot complete without teacher',async()=>{
+ as('teacher@example.com');await send('addActivity',{title:'Ngày hội sách',description:'Đọc sách',date:'2026-11-25',points:5});
+ const a=(await state(classId)).detail.activities.find(x=>x.title==='Ngày hội sách');
+ sqlite.prepare('UPDATE students SET roles=? WHERE id=?').run(JSON.stringify(['movement']),s3.id);
+ as('s3@example.com');
+ await send('updateActivity',{id:a.id,title:'Ngày hội đọc sách',description:'Đổi nội dung',date:'2026-11-25',points:6});
+ assert.equal((await state(classId)).detail.activities.find(x=>x.id===a.id).title,'Ngày hội đọc sách');
+ await denied(()=>send('completeActivity',{id:a.id}),403);
+ await send('cancelActivity',{id:a.id});
+ assert.equal((await state(classId)).detail.activities.find(x=>x.id===a.id).status,'cancelled');
+});
 await test('Excel report writer exports a multi-tab ZIP package with escaped user strings',async()=>{
  const mod=await import(new URL('report-excel.mjs',dir).href);
  const bytes=mod.buildReportWorkbook([{name:'Báo cáo',rows:[['LỚP HỌC HAY'],['Năm học 2026-2027'],[],['Tên','Điểm'],['=HYPERLINK("bad")',10]]}]);
