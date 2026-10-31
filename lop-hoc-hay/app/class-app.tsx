@@ -96,6 +96,7 @@ function ConfigEditor({ config, save, busy }: any) {
     };
     const enableKpi=()=>{
         if(c.rules.some(r=>r.kind==='speaking-total'))return;
+        if(c.rules.some(r=>r.category==='speaking')&&!window.confirm('Bật KPI mới sẽ thay các quy tắc phát biểu cũ trong cấu hình. Lịch sử tuần đã chốt vẫn được giữ. Tiếp tục?'))return;
         set('rules',[...c.rules.filter(r=>r.category!=='speaking'),JSON.parse(JSON.stringify(defaultSpeakingRule))]);
         setError('');
     };
