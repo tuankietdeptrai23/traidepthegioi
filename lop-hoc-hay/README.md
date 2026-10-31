@@ -79,7 +79,7 @@ Schema D1 có 19 bảng. Các trường tên cũ `users.email`, `students.email`
 
 ## Nhập danh sách và bảng thi đua
 
-Dán danh sách tên hoặc vùng dữ liệu Excel có STT, Họ tên, Giới tính. Không cần tài khoản/email có sẵn. Ví dụ:
+Chọn file Excel `.xlsx` hoặc CSV/TSV để đọc danh sách **ngay trên thiết bị**, hoặc dán danh sách từ Excel có STT, Họ tên, Giới tính. Không cần tài khoản/email có sẵn. Web đọc tối đa 8 MB, dò tiêu đề cột và chọn trang tính có nhiều họ tên hợp lệ nhất; xem trước trước khi cấp tài khoản. File Excel `.xls` cũ cần lưu thành `.xlsx`. Không gửi nguyên file lên máy chủ, chỉ gửi các dòng được xác nhận khi tạo tài khoản. Ví dụ:
 
 | Họ tên | Giới tính |
 |---|---|
