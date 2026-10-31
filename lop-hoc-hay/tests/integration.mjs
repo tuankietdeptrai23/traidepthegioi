@@ -92,4 +92,48 @@ await test('Avatar changes belong to current user and reject SVG, URLs and disgu
 await test('A host may end a room; ended rooms cannot be rejoined or written',async()=>{await sa('end');await denied(()=>sa('event',{kind:'chat',payload:{text:'late'},operationId:'late'}),409);await denied(()=>sa('join'),404);assert.equal((await study.studyRoomState(room.id,a.peerId)).room.closed,1)});
 await test('Scientific calculator handles precedence, trig, powers, combinatorics and Ans safely',async()=>{for(const [x,n] of [['2+3*4',14],['-2^2',-4],['2^3^2',512],['sin(30)',.5],['sqrt(81)+2π',9+2*Math.PI],['nCr(5,2)',10],['5!',120],['50%',.5]])assert.ok(Math.abs(calc.scientific(x)-n)<1e-10,x);assert.equal(calc.scientific('Ans+2',true,8),10);assert.ok(Math.abs(calc.scientific('sin(pi/2)',false)-1)<1e-10);for(const x of ['1/0','sqrt(-1)','globalThis.alert(1)','2;alert(1)','sin(1,2)','(','9'.repeat(501)])assert.throws(()=>calc.scientific(x))});
 await test('Equation and statistics utilities give correct results and reject invalid inputs',async()=>{assert.deepEqual(calc.quadratic(1,-3,2),['x₁ = 2','x₂ = 1']);assert.deepEqual(calc.quadratic(0,2,-4),['x = 2']);assert.ok(calc.quadratic(1,0,1)[0].includes('i'));assert.deepEqual(calc.linearSystem([[1,1,3],[2,-1,0]]),[1,2]);assert.throws(()=>calc.linearSystem([[1,1,2],[2,2,4]]));const v=calc.statistics([2,4,6]);assert.equal(v.mean,4);assert.equal(v.sampleSD,2);assert.throws(()=>calc.statistics([]))});
+
+await test('KPI speaking calculates a single highest reward and missing KPI penalty',async()=>{
+  const rule=domain.defaultSpeakingRule;
+  assert.equal(domain.ruleScore(rule,0),-5);
+  assert.equal(domain.ruleScore(rule,3),-5);
+  assert.equal(domain.ruleScore(rule,4),0);
+  assert.equal(domain.ruleScore(rule,7),0);
+  assert.equal(domain.ruleScore(rule,8),5);
+  assert.equal(domain.ruleScore(rule,12),10);
+  assert.equal(domain.ruleScore(rule,20),10);
+  assert.equal(domain.speakingKpiLabel(rule,3).includes('Không đủ KPI'),true);
+});
+await test('Teachers can reorder rules and configure strict KPI thresholds',async()=>{
+  as('teacher@example.com');
+  const cfg=structuredClone(domain.defaultConfig);cfg.rules.reverse();
+  await send('saveConfig',{config:cfg});
+  assert.equal((await state(classId)).detail.config.rules[0].id,cfg.rules[0].id);
+  const invalid=structuredClone(cfg);
+  invalid.rules.find(r=>r.kind==='speaking-total').kpi.rewards=[{min:8,points:5},{min:8,points:12}];
+  await denied(()=>send('saveConfig',{config:invalid}),400);
+});
+await test('Weekly speaking total stores explicit zero without scoring an empty cell',async()=>{
+  as('teacher@example.com');
+  const w='2026-11-23',ruleId='speaking-weekly';
+  let d=(await state(classId)).detail,row=d.sheets[w]?.rows.find(r=>r.id===s2.id);
+  assert.equal(row?.recorded?.[ruleId]??false,false);
+  await send('saveSheet',{week:w,groupId:g1.id,cells:[{studentId:s2.id,ruleId,count:0}]});
+  d=(await state(classId)).detail;row=d.sheets[w].rows.find(r=>r.id===s2.id);
+  assert.equal(row.recorded[ruleId],true);
+  assert.equal(row.counts[ruleId],0);
+  const active=()=>sqlite.prepare("SELECT count,delta,note FROM entries WHERE student_id=? AND week=? AND rule_id=? AND status='pending'").all(s2.id,w,ruleId);
+  assert.equal(active().length,1);assert.equal(active()[0].delta,-5);
+  assert.ok(active()[0].note.includes('KPI'));
+  await send('saveSheet',{week:w,groupId:g1.id,cells:[{studentId:s2.id,ruleId,count:8}]});
+  assert.equal(active().length,1);assert.equal(active()[0].delta,5);
+  assert.equal(active()[0].count,8);
+  await send('saveSheet',{week:w,groupId:g1.id,cells:[{studentId:s2.id,ruleId,count:12}]});
+  assert.equal(active().length,1);assert.equal(active()[0].delta,10);
+  await send('saveSheet',{week:w,groupId:g1.id,cells:[{studentId:s2.id,ruleId,count:null}]});
+  assert.equal(active().length,0);
+  d=(await state(classId)).detail;
+  assert.equal(d.sheets[w].rows.find(r=>r.id===s2.id).recorded[ruleId],false);
+});
+
 console.log(`\n${passed} integration checks passed.`);sqlite.close();
