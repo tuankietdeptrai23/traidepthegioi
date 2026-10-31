@@ -462,12 +462,28 @@ export async function action(b: Row) {
             add(db.insert(t.activities).values({ id: uid(), classId, title: str(b.title, 150), description: String(b.description || '').slice(0, 2000), date: date(b.date), points: amount(b.points, 0, 1000), participants: '[]', status: 'open' }));
             break;
         }
+        case 'updateActivity': {
+            if(!teacher&&!roles.includes('movement')&&!roles.includes('leader'))
+                fail(403,'Chỉ cán sự phong trào hoặc giáo viên được sửa hoạt động.');
+            const a=await db.select().from(t.activities).where(and(eq(t.activities.id,str(b.id,100)),eq(t.activities.classId,classId))).get();
+            if(!a||a.status!=='open')fail(409,'Chỉ cập nhật được hoạt động đang mở.');
+            add(db.update(t.activities).set({title:str(b.title,150),description:String(b.description||'').slice(0,2000),date:date(b.date),points:amount(b.points,0,1000)}).where(eq(t.activities.id,a.id)));
+            break;
+        }
+        case 'cancelActivity': {
+            if(!teacher&&!roles.includes('movement')&&!roles.includes('leader'))
+                fail(403,'Chỉ cán sự phong trào hoặc giáo viên được hủy hoạt động.');
+            const a=await db.select().from(t.activities).where(and(eq(t.activities.id,str(b.id,100)),eq(t.activities.classId,classId))).get();
+            if(!a||a.status!=='open')fail(409,'Không thể hủy hoạt động đã hoàn thành.');
+            add(db.update(t.activities).set({status:'cancelled'}).where(eq(t.activities.id,a.id)));
+            break;
+        }
         case 'joinActivity': {
             const a = await db.select().from(t.activities).where(and(eq(t.activities.id, b.id), eq(t.activities.classId, classId))).get();
             if (!a || a.status !== 'open')
                 fail(400, 'Hoạt động đã kết thúc');
             const s = await student(b.studentId || own?.id);
-            if (!teacher && s.id !== own?.id)
+            if (!teacher && !roles.includes('movement') && !roles.includes('leader') && s.id !== own?.id)
                 fail(403, 'Chỉ được đăng kí cho mình');
             const ids = parse<string[]>(a.participants, []);
             const next = ids.includes(s.id) ? ids.filter(i => i !== s.id) : [...ids, s.id];
