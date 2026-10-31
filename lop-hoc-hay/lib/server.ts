@@ -153,10 +153,14 @@ export async function action(b: Row) {
             add(db.insert(t.groups).values({ id: uid(), classId, name }));
             break;
         }
-        case 'saveConfig':
+        case 'saveConfig': {
             needTeacher();
-            add(db.update(t.classes).set({ config: JSON.stringify(validateConfig(b.config)) }).where(eq(t.classes.id, classId)));
+            let checked: Config;
+            try { checked=validateConfig(b.config); }
+            catch (e) { fail(400, e instanceof Error ? e.message : 'Cấu hình chưa hợp lệ'); }
+            add(db.update(t.classes).set({ config: JSON.stringify(checked) }).where(eq(t.classes.id, classId)));
             break;
+        }
         case 'saveStudent': {
             needTeacher();
             const gs = await allGroups();
