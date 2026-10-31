@@ -1,0 +1,6 @@
+import {state,HttpError} from '@/lib/server';
+import {monday} from '@/lib/domain';
+import {weeklyConductSheets} from '@/lib/weekly-conduct-report';
+import {buildReportWorkbook} from '@/lib/report-excel';
+export const dynamic='force-dynamic';
+export async function GET(req:Request){try{const u=new URL(req.url),classId=u.searchParams.get('classId'),week=u.searchParams.get('week')||'';if(!classId||!/^\d{4}-\d{2}-\d{2}$/.test(week)||!Number.isFinite(Date.parse(week))||new Date(week).toISOString().slice(0,10)!==week||monday(new Date(week))!==week)return Response.json({error:'Chọn lớp và tuần bắt đầu thứ Hai.'},{status:400});const result=await state(classId);if(!result.detail?.teacher)return Response.json({error:'Chỉ giáo viên hoặc admin được xuất hồ sơ rèn luyện cả lớp.'},{status:403});const bytes=buildReportWorkbook(weeklyConductSheets(result.detail,week));return new Response(new Uint8Array(bytes).buffer,{headers:{'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','Content-Disposition':'attachment; filename="Tong_ket_ren_luyen_'+week+'.xlsx"','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}})}catch(e){return Response.json({error:e instanceof HttpError?e.message:'Không thể xuất báo cáo. Hãy thử lại.'},{status:e instanceof HttpError?e.status:500,headers:{'Cache-Control':'no-store'}})}}

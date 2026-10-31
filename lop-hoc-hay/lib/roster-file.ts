@@ -160,19 +160,19 @@ function colIndex(address: string): number {
 }
 function sheetGrid(doc: Document, shared: string[]): string[][] {
   const result: string[][] = [];
-  const lines = Array.from(doc.getElementsByTagName('row')).slice(0, 1200);
+  const lines = Array.from(doc.getElementsByTagNameNS('*','row')).slice(0, 1200);
   for (const line of lines) {
     const out: string[] = [];
     let next = 0;
-    for (const c of Array.from(line.getElementsByTagName('c'))) {
+    for (const c of Array.from(line.getElementsByTagNameNS('*','c'))) {
       const explicit = colIndex(c.getAttribute('r') || '');
       const index = explicit >= 0 ? explicit : next;
       next = index + 1;
       if (index >= 50) continue;
       const type = c.getAttribute('t');
-      const v = c.getElementsByTagName('v')[0]?.textContent || '';
+      const v = c.getElementsByTagNameNS('*','v')[0]?.textContent || '';
       if (type === 's') out[index] = shared[Number(v)] || '';
-      else if (type === 'inlineStr') out[index] = Array.from(c.getElementsByTagName('t')).map(t => t.textContent || '').join('');
+      else if (type === 'inlineStr') out[index] = Array.from(c.getElementsByTagNameNS('*','t')).map(t => t.textContent || '').join('');
       else if (type === 'e') out[index] = '';
       else out[index] = v;
     }
@@ -199,12 +199,12 @@ export async function rosterFromFile(file: File): Promise<RosterFileResult> {
   let strings: string[] = [];
   if (parts.has('xl/sharedStrings.xml')) {
     const sst = await read('xl/sharedStrings.xml');
-    strings = Array.from(sst.getElementsByTagName('si')).map(si =>
-      Array.from(si.getElementsByTagName('t')).map(t => t.textContent || '').join(''));
+    strings = Array.from(sst.getElementsByTagNameNS('*','si')).map(si =>
+      Array.from(si.getElementsByTagNameNS('*','t')).map(t => t.textContent || '').join(''));
   }
-  const targets = new Map(Array.from(rels.getElementsByTagName('Relationship')).map(r =>
+  const targets = new Map(Array.from(rels.getElementsByTagNameNS('*','Relationship')).map(r =>
     [r.getAttribute('Id') || '', r.getAttribute('Target') || '']));
-  const sheets = Array.from(book.getElementsByTagName('sheet')).slice(0, 12);
+  const sheets = Array.from(book.getElementsByTagNameNS('*','sheet')).slice(0, 12);
   if (!sheets.length) throw Error('File Excel không có trang tính.');
   let best: RosterFileResult = {rows: [], sheet: '', sheetCount: sheets.length};
   for (const [i, sheet] of sheets.entries()) {
@@ -216,4 +216,21 @@ export async function rosterFromFile(file: File): Promise<RosterFileResult> {
     if (students.length > best.rows.length) best = {rows:students, sheet:sheet.getAttribute('name') || 'Sheet ' + (i+1), sheetCount:sheets.length};
   }
   return best;
+}
+
+/** Shared bounded reader for teacher timetable imports. Does not upload file contents. */
+export async function spreadsheetGridsFromFile(file:File):Promise<{name:string;grid:string[][]}[]>{
+ if(file.size>8*1024*1024)throw Error('File tối đa 8 MB.');
+ if(/\.(csv|tsv|txt)$/i.test(file.name))return [{name:file.name,grid:parseDelimited(await file.text())}];
+ if(!/\.xlsx$/i.test(file.name))throw Error('Chọn Excel .xlsx hoặc CSV / TSV.');
+ const parts=await zipTexts(file);const read=async(path:string)=>{const get=parts.get(path);if(!get)throw Error('File Excel thiếu '+path);return xml(await get())};
+ const book=await read('xl/workbook.xml'),rels=await read('xl/_rels/workbook.xml.rels');let strings:string[]=[];
+ if(parts.has('xl/sharedStrings.xml'))strings=Array.from((await read('xl/sharedStrings.xml')).getElementsByTagNameNS('*','si')).map(si=>Array.from(si.getElementsByTagNameNS('*','t')).map(t=>t.textContent||'').join(''));
+ const targets=new Map(Array.from(rels.getElementsByTagNameNS('*','Relationship')).map(r=>[r.getAttribute('Id')||'',r.getAttribute('Target')||'']));const result=[];
+ for(const [i,sheet] of Array.from(book.getElementsByTagNameNS('*','sheet')).slice(0,12).entries()){
+  const rel=sheet.getAttribute('r:id')||sheet.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships','id')||'';const path=normalizedSheetPath(targets.get(rel)||'worksheets/sheet'+(i+1)+'.xml');if(!parts.has(path))continue;
+  const doc=await read(path);for(const c of Array.from(doc.getElementsByTagNameNS('*','c')))if(c.getElementsByTagNameNS('*','f').length){c.setAttribute('t','inlineStr');const is=doc.createElement('is'),t=doc.createElement('t');t.textContent='='+c.getElementsByTagNameNS('*','f')[0].textContent;is.appendChild(t);c.appendChild(is)}
+  result.push({name:sheet.getAttribute('name')||'Sheet '+(i+1),grid:sheetGrid(doc,strings)});
+ }
+ return result;
 }

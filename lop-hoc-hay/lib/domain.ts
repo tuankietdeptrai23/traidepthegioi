@@ -1,9 +1,11 @@
+import {schoolSessions,type TimetableDay} from './timetable';
 export type SpeakingKpi = { minRequired: number; penalty: number; rewards: { min: number; points: number }[] };
 export type Rule = {
     id: string;
     name: string;
     category: string;
     points: number;
+    serious?: boolean;
     limit?: number;
     kind?: 'speaking-total';
     kpi?: SpeakingKpi;
@@ -14,7 +16,8 @@ export type Config = {
     reportDays?: number[];
     speakingOpenDates?: string[];
     academicBands?: AcademicBand[];
-    timetable?: {weekday:number;subjects:string[]}[];
+    timetable?: TimetableDay[];
+    dutyPolicyVersion?: 2;
     base: number;
     mode: 'sum' | 'average';
     rules: Rule[];
@@ -51,7 +54,7 @@ export function speakingKpiLabel(rule: Rule, count: number): string {
 }
 export const defaultTimetable = [1,2,3,4,5].map(weekday=>({weekday,subjects:[] as string[]}));
 export const dutyTasks = [{task:'Trực lớp',limit:4},{task:'Đổ rác',limit:1},{task:'Lau bảng',limit:1}] as const;
-export const defaultConfig: Config = { timetable:defaultTimetable, base: 100, mode: 'sum', bonusAttendance: 10, bonusUniform: 10, bonusClean: 15, lastDutyDays: 1, violationDuty: true, preferMaleTrash: true, rows: 5, cols: 8, fundTarget: 100000, rewardWins: 3, conductBands: [{ min: 100, level: 'Tốt' }, { min: 80, level: 'Khá' }, { min: 60, level: 'Đạt' }, { min: -99999, level: 'Chưa đạt' }], rules: [
+export const defaultConfig: Config = { dutyPolicyVersion:2, timetable:defaultTimetable, base: 100, mode: 'sum', bonusAttendance: 10, bonusUniform: 10, bonusClean: 15, lastDutyDays: 2, violationDuty: true, preferMaleTrash: true, rows: 5, cols: 8, fundTarget: 100000, rewardWins: 3, conductBands: [{ min: 100, level: 'Tốt' }, { min: 80, level: 'Khá' }, { min: 60, level: 'Đạt' }, { min: -99999, level: 'Chưa đạt' }], rules: [
         { id: 'late', name: 'Đi học trễ', category: 'attendance', points: -5 }, { id: 'absence-permit', name: 'Nghỉ học có phép', category: 'absence', points: -2 }, { id: 'absence', name: 'Nghỉ không phép', category: 'absence', points: -5 }, { id: 'skip', name: 'Cúp tiết / bỏ chào cờ', category: 'absence', points: -10 },
         { id: 'grade8', name: 'Kiểm tra bài cũ: 8 điểm', category: 'learning', points: 5 }, { id: 'grade9', name: 'Kiểm tra bài cũ: 9 điểm', category: 'learning', points: 10 }, { id: 'grade10', name: 'Kiểm tra bài cũ: 10 điểm', category: 'learning', points: 15 },
         defaultSpeakingRule,
@@ -82,75 +85,42 @@ export function standings(groups: Row[], students: Row[], entries: Row[], config
 }
 export function snapshot(groups: Row[], students: Row[], entries: Row[], config: Config) { return { config, standings: standings(groups, students, entries, config), students: students.map(s => ({ ...s, score: config.base + entries.filter(e => e.studentId === s.id && e.status === 'approved').reduce((n, e) => n + e.delta, 0) })), entries, lockedAt: new Date().toISOString() }; }
 export function canReport(roles: string[], ownGroup: string, group: string) { return roles.some(r=>['leader','discipline','study','movement','treasurer'].includes(r)) || (roles.includes('group') && ownGroup === group); }
-/** Deterministic, non-overlapping weekly roster. Officers are exempt from automatic duties. */
-export function dutyPlan(snap: Row, week: string, config: Config, existing: Row[] = []): Row[] {
-    const ranked=(snap.standings||[]).filter((g:Row)=>g.count>0);
-    if(!ranked.length)return [];
-    const lowest=Math.min(...ranked.map((g:Row)=>g.score));
-    const lastIds=new Set(ranked.filter((g:Row)=>g.score===lowest).map((g:Row)=>g.id));
-    const eligible:Row[]=(snap.students||[]).filter((s:Row)=>s.active&&parse<string[]>(s.roles,[]).length===0);
-    if(!eligible.length)return [];
-    const days=(config.timetable?.filter(d=>d.weekday>=1&&d.weekday<=6)||defaultTimetable)
-        .filter((d,i,a)=>a.findIndex(x=>x.weekday===d.weekday)===i)
-        .sort((a,b)=>a.weekday-b.weekday);
-    if(!days.length)return [];
-    const eligibleIds=new Set(eligible.map(s=>s.id));
-    const lastGroup=eligible.filter(s=>lastIds.has(s.groupId));
-    const balances=new Map<string,number>();
-    for(const e of snap.entries||[]){
-        if(!config.violationDuty||e.status!=='approved'||e.delta>=0||!eligibleIds.has(e.studentId))continue;
-        balances.set(e.studentId,(balances.get(e.studentId)||0)+Math.max(1,Math.floor(Number(e.count)||1)));
-    }
-    const totalViolations=[...balances.values()].reduce((a,b)=>a+b,0);
-    const slotsEachDay=dutyTasks.reduce((n,x)=>n+x.limit,0);
-    // When violations alone fill the upcoming week's duty capacity, no extra last-place penalty.
-    const needsLastGroup=totalViolations<days.length*slotsEachDay;
-    const lastGroupDays=needsLastGroup?Math.max(0,config.lastDutyDays):0;
-    const out:Row[]=[];
-    const weekSeed=Math.floor(Date.parse(week+'T00:00:00Z')/604800000);
-    const counts=new Map<string,number>();
-    for(const d of existing)if(eligibleIds.has(d.studentId))counts.set(d.studentId,(counts.get(d.studentId)||0)+1);
-    let previousTask=new Map<string,string>();
-    const lastDaysUsed=new Set<string>();
-    const maxRounds=Math.max(1,...balances.values())+existing.length+1;
-    for(let round=0;round<maxRounds;round++){
-        let made=0;
-        for(const day of days){
-            const date=dayPlus(week,7+7*round+day.weekday-1);
-            const reserved=existing.filter(x=>x.date===date);
-            const used=new Set<string>(reserved.map(x=>x.studentId));
-            const slots=dutyTasks.flatMap(t=>Array.from({length:Math.max(0,t.limit-reserved.filter(r=>r.task===t.task||(t.task==='Trực lớp'&&['Quét lớp','Lau bàn','Vệ sinh lớp'].includes(r.task))).length)},()=>t.task));
-            const available=eligible.filter(s=>!used.has(s.id));
-            if(!available.length)continue;
-            for(let slot=0;slot<slots.length;slot++){
-                const task=slots[slot];
-                const owed=eligible.filter(s=>!used.has(s.id)&&(balances.get(s.id)||0)>0);
-                const mayUseLast=round===0&&lastGroupDays>0&&(lastDaysUsed.has(date)||lastDaysUsed.size<lastGroupDays);
-                const backup=mayUseLast?lastGroup.filter(s=>!used.has(s.id)):[];
-                const pool=owed.length?owed:backup;
-                if(!pool.length)continue;
-                const fair=pool.slice().sort((a,b)=>{
-                    const load=(counts.get(a.id)||0)-(counts.get(b.id)||0);
-                    if(load)return load;
-                    if(task==='Đổ rác'&&config.preferMaleTrash&&a.gender!==b.gender){if(a.gender==='male')return -1;if(b.gender==='male')return 1;}
-                    const repeated=Number(previousTask.get(a.id)===task)-Number(previousTask.get(b.id)===task);
-                    if(repeated)return repeated;
-                    return ((eligible.findIndex(x=>x.id===a.id)+weekSeed)%eligible.length)-
-                        ((eligible.findIndex(x=>x.id===b.id)+weekSeed)%eligible.length);
-                });
-                const person=fair[0];used.add(person.id);made++;
-                if(!owed.length)lastDaysUsed.add(date);
-                counts.set(person.id,(counts.get(person.id)||0)+1);previousTask.set(person.id,task);
-                const violation=(balances.get(person.id)||0)>0;
-                if(violation)balances.set(person.id,(balances.get(person.id)||0)-1);
-                out.push({studentId:person.id,date,task,source:violation?'Bù 1 lượt vi phạm tuần '+week:'Tổ cuối tuần '+week,sourceKey:'automatic:'+week+':'+date+':'+person.id});
-            }
-        }
-        if(round===0&&!totalViolations)break;
-        if([...balances.values()].every(v=>v===0))break;
-        if(!made)break;
-    }
-    return out;
+/** Each last-place group receives its own two school days. Violations are extra turns. */
+export function dutyPlan(snap:Row,week:string,config:Config,existing:Row[]=[]):Row[]{
+ const ranked=(snap.standings||[]).filter((g:Row)=>g.count>0);if(!ranked.length)return [];
+ const minimum=Math.min(...ranked.map((g:Row)=>g.score));const last=ranked.filter((g:Row)=>g.score===minimum).sort((a:Row,b:Row)=>a.name?.localeCompare(b.name||'','vi')||String(a.id).localeCompare(String(b.id)));
+ const eligible:Row[]=(snap.students||[]).filter((s:Row)=>s.active&&parse<string[]>(s.roles,[]).length===0);if(!eligible.length)return [];
+ const days=(config.timetable||defaultTimetable).filter(d=>schoolSessions(d).length).sort((a,b)=>a.weekday-b.weekday);if(!days.length)return [];
+ const lastIds=new Set(last.map((g:Row)=>g.id)),lastMembers=eligible.filter(s=>lastIds.has(s.groupId));
+ const groupDays=last.flatMap((group:Row)=>Array.from({length:config.lastDutyDays},(_,i)=>({group,index:i+1})));
+ const owed=new Map<string,number>();for(const e of snap.entries||[])if(config.violationDuty&&e.status==='approved'&&e.delta<0&&eligible.some(s=>s.id===e.studentId))owed.set(e.studentId,(owed.get(e.studentId)||0)+Math.max(1,Math.floor(Number(e.count)||1)));
+ const loads=new Map<string,number>();for(const d of existing)loads.set(d.studentId,(loads.get(d.studentId)||0)+1);
+ const out:Row[]=[],previous=new Map<string,string>();const seed=Math.floor(Date.parse(week+'T00:00:00Z')/604800000);let dayIndex=0;
+ const maxRounds=groupDays.length+Math.max(0,...owed.values())+existing.length+2;
+ for(let round=0;round<maxRounds;round++){
+  let made=0;
+  for(const day of days){
+   const date=dayPlus(week,7+round*7+day.weekday-1);const groupDay=groupDays[dayIndex++];const reserved=existing.filter(x=>x.date===date);const used=new Set<string>(reserved.map(x=>x.studentId));
+   const team=groupDay?eligible.filter(s=>s.groupId===groupDay.group.id):[];
+   const target=Math.max(6,used.size+team.filter(s=>!used.has(s.id)).length);
+   const classAlready=reserved.filter(r=>!['Đổ rác','Lau bảng'].includes(r.task)).length;
+   const slots=[...Array(Math.max(0,target-2-classAlready)).fill('Trực lớp'),...(!reserved.some(r=>r.task==='Đổ rác')?['Đổ rác']:[]),...(!reserved.some(r=>r.task==='Lau bảng')?['Lau bảng']:[])].slice(0,Math.max(0,target-used.size));
+   for(const task of slots){
+    const required=team.filter(s=>!used.has(s.id));const violations=eligible.filter(s=>!used.has(s.id)&&(owed.get(s.id)||0)>0);
+    const backup=lastMembers.filter(s=>!used.has(s.id));
+    const pool=groupDay?(required.length?required:backup.length?backup:eligible.filter(s=>!used.has(s.id))):(violations.length?violations:backup.length?backup:eligible.filter(s=>!used.has(s.id)));
+    if(!pool.length)continue;
+    const person=pool.slice().sort((a,b)=>{const diff=(loads.get(a.id)||0)-(loads.get(b.id)||0);if(diff)return diff;if(task==='Đổ rác'&&config.preferMaleTrash&&a.gender!==b.gender){if(a.gender==='male')return -1;if(b.gender==='male')return 1;}const repeated=Number(previous.get(a.id)===task)-Number(previous.get(b.id)===task);if(repeated)return repeated;return ((eligible.indexOf(a)+seed)%eligible.length)-((eligible.indexOf(b)+seed)%eligible.length)})[0];
+    const violation=!groupDay&&(owed.get(person.id)||0)>0;if(violation)owed.set(person.id,(owed.get(person.id)||0)-1);
+    const sessions=schoolSessions(day);const morningCount=out.filter(r=>r.date===date&&r.task==='Trực lớp'&&r.source.endsWith(' · Buổi sáng')).length;const session=sessions.length===1?sessions[0]:task==='Đổ rác'?'afternoon':task==='Lau bảng'?'morning':morningCount<Math.ceil((target-2)/2)?'morning':'afternoon';
+    const reason=groupDay?'Tổ cuối tuần '+week+' · '+groupDay.group.name+' · Ngày '+groupDay.index+'/'+config.lastDutyDays:violation?'Bù 1 lượt vi phạm tuần '+week:'Bổ sung đủ người từ tổ cuối tuần '+week;
+    out.push({studentId:person.id,date,task,source:reason+(session==='afternoon'?' · Buổi chiều':' · Buổi sáng'),sourceKey:'automatic:'+week+':'+date+':'+person.id});used.add(person.id);loads.set(person.id,(loads.get(person.id)||0)+1);previous.set(person.id,task);made++;
+   }
+  }
+  // Finish every school day in the week even if the violation queue becomes empty midweek.
+  if(dayIndex>=groupDays.length&&[...owed.values()].every(n=>n===0))break;if(!made)break;
+ }
+ return out;
 }
 export function validateConfig(c: any): Config {
     if (!c || !Number.isInteger(c.base) || c.base < 0 || c.base > 10000 || !['sum', 'average'].includes(c.mode) || !Array.isArray(c.rules) || !c.rules.length || c.rules.length > 100)
@@ -158,6 +128,7 @@ export function validateConfig(c: any): Config {
     if(c.reportMode!==undefined&&!['weekly','daily'].includes(c.reportMode))throw Error('Chế độ báo cáo không hợp lệ');
     if(c.reportDays!==undefined&&(!Array.isArray(c.reportDays)||!c.reportDays.length||c.reportDays.some((d:any)=>!Number.isInteger(d)||d<1||d>6)||new Set(c.reportDays).size!==c.reportDays.length))throw Error('Chọn ngày báo cáo từ thứ Hai đến thứ Bảy');
     if(c.speakingOpenDates!==undefined&&(!Array.isArray(c.speakingOpenDates)||c.speakingOpenDates.length>60||c.speakingOpenDates.some((d:any)=>typeof d!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(d)||!Number.isFinite(Date.parse(d+'T00:00:00Z'))||new Date(d+'T00:00:00Z').toISOString().slice(0,10)!==d)))throw Error('Ngày mở phát biểu không hợp lệ');
+    if(c.rules.some((r:any)=>r.serious!==undefined&&typeof r.serious!=='boolean'))throw Error('Cờ cảnh báo nghiêm trọng phải là có / không.');
     const ids = new Set();
     for (const r of c.rules) {
         if (!r.id || ids.has(r.id) || typeof r.name !== 'string' || !r.name.trim() || r.name.length > 150 || !['attendance', 'absence', 'learning', 'speaking', 'uniform', 'discipline', 'movement'].includes(r.category) || !Number.isInteger(r.points) || Math.abs(r.points) > 1000 || (r.limit !== undefined && (!Number.isInteger(r.limit) || r.limit < 1 || r.limit > 100)))
@@ -181,6 +152,7 @@ export function validateConfig(c: any): Config {
         c.rules.filter((r: Rule) => r.category === 'speaking').length !== 1)
         throw Error('KPI phát biểu không được dùng cùng quy tắc phát biểu cũ.');
     if(c.timetable!==undefined){if(!Array.isArray(c.timetable)||c.timetable.length>6||new Set(c.timetable.map((x:any)=>x.weekday)).size!==c.timetable.length||c.timetable.some((x:any)=>!Number.isInteger(x.weekday)||x.weekday<1||x.weekday>6||!Array.isArray(x.subjects)||x.subjects.length>12||x.subjects.some((v:any)=>typeof v!=='string'||v.length>80)))throw Error('Thời khóa biểu phải có ngày học hợp lệ và môn học ngắn gọn.');}
+    if(c.timetable?.some((d:any)=>['morning','afternoon'].some(k=>d[k]!==undefined&&(!Array.isArray(d[k])||d[k].length>5||d[k].some((v:any)=>typeof v!=='string'||v.length>80)))))throw Error('Mỗi buổi sáng / chiều tối đa 5 tiết, tên môn tối đa 80 ký tự.');
     if(c.academicBands!==undefined){const bands=c.academicBands;if(!Array.isArray(bands)||!bands.length||bands.length>20||bands[0]?.min!==0||bands.some((b:any,i:number)=>!b||!Number.isFinite(b.min)||b.min<0||b.min>10||Math.abs(b.min*10-Math.round(b.min*10))>1e-8||!Number.isInteger(b.points)||Math.abs(b.points)>1000||!['learned','unlearned'].includes(b.kind)||(i>0&&b.min<=bands[i-1].min)))throw Error('Mốc thuộc bài phải bắt đầu từ 0, tăng dần đến tối đa 10 và có mức cộng/trừ hợp lệ.');}
     if (!Number.isInteger(c.rewardWins) || c.rewardWins < 1 || c.rewardWins > 6)
         throw Error('Số tuần khen thưởng phải từ 1 đến 6');
@@ -191,7 +163,7 @@ export function validateConfig(c: any): Config {
         throw Error('Số hàng, cột hoặc ngày trực chưa hợp lệ');
     if (!Array.isArray(c.conductBands) || !c.conductBands.length || c.conductBands.some((x: any) => !Number.isFinite(x.min) || !['Tốt', 'Khá', 'Đạt', 'Chưa đạt'].includes(x.level)))
         throw Error('Mốc đánh giá chưa hợp lệ');
-    return { ...c, preferMaleTrash: !!c.preferMaleTrash, violationDuty: !!c.violationDuty };
+    return { ...c,dutyPolicyVersion:2, preferMaleTrash: !!c.preferMaleTrash, violationDuty: !!c.violationDuty };
 }
 
 export function studentLoginBase(name:string){const value=name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/g,'d').replace(/[^a-z0-9]/g,'');return (value.length>=3?value:'hs'+value).slice(0,36)}
