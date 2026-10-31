@@ -403,6 +403,7 @@ export async function action(b: Row) {
             const dueDate=date(b.dueDate);
             const id=uid();
             add(db.insert(t.fundCollections).values({id,classId,title,description,amount:sum,dueDate,status:'open',createdBy:user.email,createdAt:now()}));
+            add(db.insert(t.notices).values({id:uid(),classId,title:'Thông báo thu quỹ: '+title,body:'Thủ quỹ thông báo thu '+sum.toLocaleString('vi-VN')+' ₫/học sinh. Hạn: '+dueDate+(description?' · '+description:''),createdBy:user.email,createdAt:now()}));
             break;
         }
         case 'closeFundCollection': {
