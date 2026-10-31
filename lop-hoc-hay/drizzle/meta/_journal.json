@@ -29,6 +29,13 @@
       "when": 1793415288571,
       "tag": "0003_normal_toro",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1793416577795,
+      "tag": "0004_pale_gamma_corps",
+      "breakpoints": true
     }
   ]
 }

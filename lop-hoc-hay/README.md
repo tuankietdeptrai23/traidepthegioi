@@ -101,3 +101,15 @@ Thêm schema trong `db/schema.ts`, chạy `pnpm db:generate`, build và áp dụ
 Dữ liệu không nằm trong Git. Giữ bản sao lưu D1 tại nền tảng triển khai; CSV không phải bản sao lưu đầy đủ. Các thay đổi lớp được bảo vệ bởi revision và batch nguyên tử để tránh chốt kết quả sai khi cập nhật đồng thời.
 
 Giới hạn hiện tại: chưa tải tệp trực tiếp, chưa có nhiều đợt thu quỹ hoặc miễn giảm theo đợt, chưa tự tính điểm học kì theo hệ số, chưa đồng bộ phần mềm nhà trường, chưa có thông báo đẩy. Sơ đồ hỗ trợ kéo thả và thao tác chạm trên điện thoại. Xem [SECURITY.md](SECURITY.md), [ARCHITECTURE.md](ARCHITECTURE.md).
+
+### Lớp học trực tuyến
+
+Mỗi tài khoản đang hoạt động có thể tạo nhóm học, mời bằng liên kết và vào lại phòng đã tham gia. Giới hạn 8 người đồng thời để phù hợp gọi WebRTC dạng mesh. Không có thời lượng tự kết thúc; chủ phòng kết thúc thủ công. Đây không phải cam kết băng thông, lưu trữ hoặc hạ tầng miễn phí vô hạn.
+
+- Mic/camera tắt khi vào; bật theo thao tác và quyền thiết bị của người dùng. Có giơ tay, chat, khóa lời mời, đổi link và kết thúc phòng.
+- Chia sẻ tab, cửa sổ ứng dụng hoặc màn hình qua bộ chọn của trình duyệt, tùy chọn kèm âm thanh. Nguồn âm thanh phụ thuộc trình duyệt/hệ điều hành; nên dùng Chrome/Edge máy tính và chọn tab có bật âm thanh. Chỉ hoạt động đầy đủ trên HTTPS.
+- Bảng trắng chung đồng bộ khi nhấc bút, có tẩy, hoàn tác nét của mình, xuất PNG; chủ phòng được dọn bảng.
+- Máy tính khoa học với bố cục tham khảo 580/880: DEG/RAD, lượng giác, tổ hợp, giai thừa, phương trình bậc hai, hệ hai ẩn, thống kê và lịch sử cục bộ. Không phải giả lập Casio chính thức và không mô phỏng toàn bộ chức năng máy thật.
+- Đồng hồ tập trung 25/5 riêng từng người, không ảnh hưởng cuộc gọi. Avatar emoji hoặc ảnh được thu nhỏ 160×160 và lưu qua API có xác thực.
+
+**Kết nối mạng:** mặc định dùng STUN Cloudflare và truyền media trực tiếp giữa thiết bị; một số mạng NAT/firewall không kết nối được nếu thiếu TURN. Muốn có relay, cấu hình bí mật runtime `STUDY_TURN_KEY_ID` và `STUDY_TURN_API_TOKEN` từ Cloudflare Realtime TURN. API cấp ICE tạm thời 24 giờ cho phiên trong phòng; frontend làm mới mỗi 6 giờ. Có thể phát sinh phí nhà cung cấp; dự án không tự mua hoặc provision TURN. Chưa kiểm thử gọi qua các mạng NAT khác nhau hay relay production. Không tích hợp Zoom/Google Meet, không ghi hình cuộc gọi.
