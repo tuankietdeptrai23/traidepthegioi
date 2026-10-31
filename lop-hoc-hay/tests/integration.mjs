@@ -5,13 +5,14 @@ import { DatabaseSync } from 'node:sqlite';
 import { readFileSync,writeFileSync,mkdirSync,readdirSync } from 'node:fs';
 import ts from 'typescript';
 const dir=new URL('../work/tests/',import.meta.url);mkdirSync(dir,{recursive:true});
-for(const [src,target] of [['lib/domain.ts','domain.mjs'],['db/schema.ts','schema.mjs'],['lib/server.ts','server.mjs'],['lib/auth.ts','login.mjs'],['lib/study-domain.ts','study-domain.mjs'],['lib/study-server.ts','study-server.mjs'],['lib/calculator.ts','calculator.mjs'],['lib/academic-grid.ts','academic-grid.mjs'],['lib/sheet-input.ts','sheet-input.mjs']]){
+for(const [src,target] of [['lib/domain.ts','domain.mjs'],['db/schema.ts','schema.mjs'],['lib/server.ts','server.mjs'],['lib/auth.ts','login.mjs'],['lib/study-domain.ts','study-domain.mjs'],['lib/study-server.ts','study-server.mjs'],['lib/calculator.ts','calculator.mjs'],['lib/academic-grid.ts','academic-grid.mjs'],['lib/report-excel.ts','report-excel.mjs'],['lib/sheet-input.ts','sheet-input.mjs']]){
  let code=readFileSync(new URL('../'+src,import.meta.url),'utf8').replaceAll("'@/db'","'./db.mjs'").replaceAll("'@/db/schema'","'./schema.mjs'").replaceAll("'@/app/chatgpt-auth'","'./who.mjs'").replaceAll("'./request-context'","'./request.mjs'").replaceAll("'./auth'","'./login.mjs'").replaceAll("'./domain'","'./domain.mjs'").replaceAll("'./study-domain'","'./study-domain.mjs'").replaceAll("'./academic-grid'","'./academic-grid.mjs'");
  writeFileSync(new URL(target,dir),ts.transpileModule(code,{compilerOptions:{module:ts.ModuleKind.ES2022,target:ts.ScriptTarget.ES2022}}).outputText);
 }
 writeFileSync(new URL('db.mjs',dir),"import {drizzle} from 'drizzle-orm/d1';import * as schema from './schema.mjs';export function getDb(){return drizzle(globalThis.__d1,{schema})}");
 writeFileSync(new URL('who.mjs',dir),'export async function getChatGPTUser(){return globalThis.__identity}');
 writeFileSync(new URL('request.mjs',dir),'export async function requestHeaders(){return globalThis.__headers||new Headers()}');
+const parseRoles=(v)=>{try{return JSON.parse(v||'[]')}catch{return []}};
 const sqlite=new DatabaseSync(':memory:');sqlite.exec('PRAGMA foreign_keys=ON');
 for(const f of readdirSync(new URL('../drizzle/',import.meta.url)).filter(f=>f.endsWith('.sql')).sort())sqlite.exec(readFileSync(new URL('../drizzle/'+f,import.meta.url),'utf8'));
 let conflict=false;
@@ -40,7 +41,7 @@ await test('Submitted reports prevent adding entries until returned',async()=>{a
 await test('Only teacher can approve reports',async()=>{let st=await state(classId);const r=st.detail.reports[0];await denied(()=>send('reviewReport',{id:r.id,status:'approved'}),403);as('teacher@example.com');await send('reviewReport',{id:r.id,status:'approved'});st=await state(classId);assert.ok(st.detail.entries.every(e=>e.status==='approved'));assert.equal(st.detail.entries.find(e=>e.grade)?.grade,'9')});
 await test('Cannot lock before all groups approved',async()=>{as('teacher@example.com');await denied(()=>send('lockWeek',{week:'2026-10-26'}),400)});
 as('s3@example.com');await send('submitReport',{week:'2026-10-26',groupId:g2.id});as('teacher@example.com');detail=(await state(classId)).detail;await send('reviewReport',{id:detail.reports.find(r=>r.groupId===g2.id).id,status:'approved'});
-await test('Weekly lock stores scores and schedules duties once',async()=>{await send('lockWeek',{week:'2026-10-26'});const st=(await state(classId)).detail;assert.equal(st.periods.length,1);assert.ok(st.duties.length>=2);assert.equal(new Set(st.duties.map(d=>d.sourceKey)).size,st.duties.length);await denied(()=>send('lockWeek',{week:'2026-10-26'}),409);await denied(()=>send('addEntry',{week:'2026-10-26',studentId:s2.id,ruleId:'late'}),409)});
+await test('Weekly lock stores scores and schedules duties once',async()=>{await send('lockWeek',{week:'2026-10-26'});const st=(await state(classId)).detail;assert.equal(st.periods.length,1);assert.equal(new Set(st.duties.map(d=>d.sourceKey)).size,st.duties.length);assert.ok(st.duties.every(d=>!parseRoles(st.students.find(s=>s.id===d.studentId)?.roles).length));await denied(()=>send('lockWeek',{week:'2026-10-26'}),409);await denied(()=>send('addEntry',{week:'2026-10-26',studentId:s2.id,ruleId:'late'}),409)});
 await test('Changing config cannot alter locked historical scores',async()=>{const old=(await state(classId)).detail.ranks['2026-10-26'];const cfg=structuredClone(domain.defaultConfig);cfg.base=200;await send('saveConfig',{config:cfg});assert.deepEqual((await state(classId)).detail.ranks['2026-10-26'],old)});
 await test('Concurrent revision conflict rolls back entire write',async()=>{const before=sqlite.prepare('SELECT count(*) n FROM notices').get().n;conflict=true;await denied(()=>send('addNotice',{title:'Race',body:'Should rollback'}),409);assert.equal(sqlite.prepare('SELECT count(*) n FROM notices').get().n,before);assert.equal(sqlite.prepare('SELECT count(*) n FROM guards').get().n,0)});
 await test('Fund correction is auditable and cannot repeat',async()=>{await send('addFund',{type:'income',amount:100000,studentId:s2.id,description:'Đóng quỹ',date:'2026-10-30'});const f=(await state(classId)).detail.funds[0];await send('reverseFund',{id:f.id,reason:'Nhập sai'});await denied(()=>send('reverseFund',{id:f.id,reason:'Lặp'}),409);const fs=(await state(classId)).detail.funds;assert.equal(fs.reduce((n,f)=>n+(f.type==='income'?f.amount:-f.amount),0),0)});
@@ -187,5 +188,54 @@ await test('Editing or clearing a grade only replaces that subject and attempt, 
 await test('Changing thresholds does not recalculate existing scores; reports and weekly locks protect the grid',async()=>{const c=structuredClone(academicConfig);c.academicBands[2].points=99;await send('saveConfig',{config:c});assert.equal((await state(classId)).detail.entries.find(e=>e.week===aw&&e.grade==='8.5').delta,7);for(const group of [g1,g2]){await send('submitReport',{week:aw,groupId:group.id});const rep=(await state(classId)).detail.reports.find(r=>r.week===aw&&r.groupId===group.id);await send('reviewReport',{id:rep.id,status:'approved'})}await denied(()=>send('saveAcademicSheet',{week:aw,groupId:g1.id,subject:'Toán',attempt:1,cells:[{studentId:s2.id,grade:8}]}),409);await send('lockWeek',{week:aw});await denied(()=>send('saveAcademicSheet',{week:aw,groupId:g1.id,subject:'Toán',attempt:1,cells:[{studentId:s2.id,grade:8}]}),409);as('s2@example.com');assert.ok((await state(classId)).detail.entries.some(e=>e.week===aw&&e.grade==='8.5'&&e.status==='approved'))});
 const sheetInput=await import(new URL('sheet-input.mjs',dir));
 await test('Excel rectangle paste validates all rule cells, preserves explicit KPI zero, and rejects formulas',async()=>{const rules=[{id:'late',name:'Trễ',category:'attendance',points:-5},domain.defaultSpeakingRule];assert.deepEqual(sheetInput.countPaste('2\t0\n\t',rules,2,''),[{row:0,col:0,count:2},{row:0,col:1,count:0},{row:1,col:0,count:0},{row:1,col:1,count:null}]);assert.throws(()=>sheetInput.countPaste('=1+1',rules,1,''));assert.throws(()=>sheetInput.countPaste('1\n2',rules,1,''));assert.throws(()=>sheetInput.countPaste('1\t2\t3',rules,1,''));assert.throws(()=>sheetInput.countPaste('1',[{id:'grade9',name:'9',category:'learning',points:10}],1,''));assert.throws(()=>sheetInput.countPaste('3',[{id:'late',name:'Trễ',category:'attendance',points:-5,limit:2}],1,''))});
-await test('Automatic duty allocation covers every task in a small group, prioritizes male trash duty, and excludes archived offenders',async()=>{const config={...structuredClone(domain.defaultConfig),lastDutyDays:1,preferMaleTrash:true,violationDuty:true};const sn={standings:[{id:'a',count:2,score:200},{id:'b',count:2,score:180}],students:[{id:'a1',groupId:'a',active:1,gender:'male'},{id:'b1',groupId:'b',active:1,gender:'male'},{id:'b2',groupId:'b',active:1,gender:'female'},{id:'old',groupId:'b',active:0,gender:'male'}],entries:[{studentId:'b2',delta:-5,status:'approved'},{studentId:'b2',delta:-5,status:'approved'},{studentId:'old',delta:-5,status:'approved'}]};const rows=domain.dutyPlan(sn,'2027-03-01',config);const tasks=rows.filter(x=>x.sourceKey.startsWith('last:'));assert.deepEqual([...new Set(tasks.map(x=>x.task))].sort(),['Quét lớp','Lau bảng','Lau bàn','Đổ rác'].sort());assert.equal(tasks.find(x=>x.task==='Đổ rác').studentId,'b1');assert.ok(tasks.every(x=>['b1','b2'].includes(x.studentId)));assert.equal(rows.filter(x=>x.sourceKey.startsWith('violation:')).length,1);assert.ok(!rows.some(x=>x.studentId==='old'));assert.equal(new Set(rows.map(x=>x.sourceKey)).size,rows.length);const single={...sn,students:[{id:'solo',groupId:'b',active:1,gender:'female'}],entries:[]};assert.equal(domain.dutyPlan(single,'2027-03-01',config).length,4)});
+await test('Automatic duty allocation follows timetable, assigns 1 task per learner/day and excludes officers',async()=>{
+ const config={...structuredClone(domain.defaultConfig),lastDutyDays:2,timetable:[{weekday:1,subjects:['Toán']},{weekday:3,subjects:['Ngữ văn']}],violationDuty:true};
+ const students=Array.from({length:14},(_,i)=>({id:'s'+i,groupId:i<7?'a':'b',active:1,roles:i===0?JSON.stringify(['leader']):'[]'}));
+ const entries=[{studentId:'s8',delta:-5,count:2,status:'approved'},{studentId:'s9',delta:-5,count:1,status:'approved'},{studentId:'s0',delta:-5,count:2,status:'approved'}];
+ const rows=domain.dutyPlan({standings:[{id:'a',score:190,count:7},{id:'b',score:180,count:7}],students,entries},'2027-03-01',config);
+ assert.ok(rows.length>=3);assert.ok(rows.every(x=>['Trực lớp','Đổ rác','Lau bảng'].includes(x.task)));
+ assert.ok(rows.every(x=>['2027-03-08','2027-03-10'].includes(x.date)));
+ assert.ok(!rows.some(x=>x.studentId==='s0'));
+ assert.equal(new Set(rows.map(x=>x.studentId+'|'+x.date)).size,rows.length);
+ assert.equal(rows.filter(x=>x.studentId==='s8'&&x.source.startsWith('Bù')).length,2);
+ assert.equal(rows.filter(x=>x.studentId==='s9'&&x.source.startsWith('Bù')).length,1);
+ assert.equal(new Set(rows.map(x=>x.sourceKey)).size,rows.length);
+ const enough={...config,lastDutyDays:2,timetable:[{weekday:1,subjects:[]}]};
+ const many=Array.from({length:8},(_,i)=>({studentId:'s'+(i+1),delta:-5,count:1,status:'approved'}));
+ const mostlyViolations=domain.dutyPlan({standings:[{id:'a',score:190,count:7},{id:'b',score:180,count:7}],students,entries:many},'2027-03-01',enough);
+ assert.ok(mostlyViolations.every(x=>x.source.startsWith('Bù')));
+ assert.throws(()=>domain.validateConfig({...config,timetable:[{weekday:1,subjects:[]},{weekday:1,subjects:[]}]}));
+});
+await test('Treasurer creates collection, records partial receipts, prevents excess and writes corrections',async()=>{
+ as('teacher@example.com');
+ await send('createFundCollection',{title:'Quỹ tháng 11',description:'Sinh hoạt',amount:100000,dueDate:'2026-11-30'});
+ const c=(await state(classId)).detail.fundCollections.find(x=>x.title==='Quỹ tháng 11');
+ assert.ok(c&&c.status==='open');
+ as('s2@example.com');await denied(()=>send('recordFundCollections',{collectionId:c.id,date:'2026-11-02',payments:[{studentId:s2.id,amount:10000}]}),403);
+ as('teacher@example.com');
+ await send('recordFundCollections',{collectionId:c.id,date:'2026-11-02',payments:[{studentId:s2.id,amount:30000},{studentId:s3.id,amount:100000}]});
+ let summary=(await state(classId)).detail.fundCollections.find(x=>x.id===c.id);
+ assert.equal(summary.paid,130000);
+ await denied(()=>send('recordFundCollections',{collectionId:c.id,date:'2026-11-02',payments:[{studentId:s2.id,amount:80000}]}),400);
+ await send('recordFundCollections',{collectionId:c.id,date:'2026-11-03',payments:[{studentId:s2.id,amount:70000}]});
+ summary=(await state(classId)).detail.fundCollections.find(x=>x.id===c.id);
+ assert.equal(summary.paid,200000);
+ const receipt=summary.payments.find(x=>x.studentId===s2.id&&x.amount===30000);
+ await send('reverseFund',{id:receipt.id,reason:'Nhập nhầm'});
+ summary=(await state(classId)).detail.fundCollections.find(x=>x.id===c.id);
+ assert.equal(summary.paid,170000);
+ assert.ok(summary.payments.some(x=>x.type==='expense'&&x.amount===30000));
+ as('s2@example.com');const own=(await state(classId)).detail.fundCollections.find(x=>x.id===c.id);
+ assert.ok(own.payments.every(x=>x.studentId===s2.id));
+ as('teacher@example.com');
+ await send('closeFundCollection',{id:c.id,status:'closed'});
+ await denied(()=>send('recordFundCollections',{collectionId:c.id,date:'2026-11-04',payments:[{studentId:s2.id,amount:1}]}),409);
+});
+await test('Excel report writer exports a multi-tab ZIP package with escaped user strings',async()=>{
+ const mod=await import(new URL('report-excel.mjs',dir).href);
+ const bytes=mod.buildReportWorkbook([{name:'Báo cáo',rows:[['LỚP HỌC HAY'],['Năm học 2026-2027'],[],['Tên','Điểm'],['=HYPERLINK("bad")',10]]}]);
+ assert.equal(String.fromCharCode(...bytes.slice(0,4)),'PK\u0003\u0004');
+ const raw=new TextDecoder().decode(bytes);
+ assert.ok(raw.includes('xl/workbook.xml'));assert.ok(raw.includes('=HYPERLINK'));assert.ok(!raw.includes('<f>'));
+});
 console.log(`\n${passed} integration checks passed.`);sqlite.close();
