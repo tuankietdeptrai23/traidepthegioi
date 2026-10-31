@@ -80,7 +80,7 @@ export function standings(groups: Row[], students: Row[], entries: Row[], config
 export function snapshot(groups: Row[], students: Row[], entries: Row[], config: Config) { return { config, standings: standings(groups, students, entries, config), students: students.map(s => ({ ...s, score: config.base + entries.filter(e => e.studentId === s.id && e.status === 'approved').reduce((n, e) => n + e.delta, 0) })), entries, lockedAt: new Date().toISOString() }; }
 export function canReport(roles: string[], ownGroup: string, group: string) { return roles.some(r=>['leader','discipline','study','movement','treasurer'].includes(r)) || (roles.includes('group') && ownGroup === group); }
 /** Deterministic, non-overlapping weekly roster. Officers are exempt from automatic duties. */
-export function dutyPlan(snap: Row, week: string, config: Config): Row[] {
+export function dutyPlan(snap: Row, week: string, config: Config, existing: Row[] = []): Row[] {
     const ranked=(snap.standings||[]).filter((g:Row)=>g.count>0);
     if(!ranked.length)return [];
     const lowest=Math.min(...ranked.map((g:Row)=>g.score));
@@ -111,7 +111,7 @@ export function dutyPlan(snap: Row, week: string, config: Config): Row[] {
         let made=0;
         for(const day of days){
             const date=dayPlus(week,7+7*round+day.weekday-1);
-            const used=new Set<string>();
+            const used=new Set<string>(existing.filter(x=>x.date===date).map(x=>x.studentId));
             const slots=dutyTasks.flatMap(t=>Array.from({length:t.limit},()=>t.task));
             const available=eligible.filter(s=>!used.has(s.id));
             if(!available.length)continue;
