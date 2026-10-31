@@ -1,9 +1,12 @@
+export type SpeakingKpi = { minRequired: number; penalty: number; rewards: { min: number; points: number }[] };
 export type Rule = {
     id: string;
     name: string;
     category: string;
     points: number;
     limit?: number;
+    kind?: 'speaking-total';
+    kpi?: SpeakingKpi;
 };
 export type Config = {
     base: number;
@@ -24,10 +27,26 @@ export type Config = {
         level: string;
     }[];
 };
+export const defaultSpeakingRule: Rule = {
+    id: 'speaking-weekly', name: 'Tổng phát biểu / tuần', category: 'speaking', points: 0,
+    kind: 'speaking-total', kpi: {minRequired: 4, penalty: 5, rewards: [{min: 8, points: 5}, {min: 12, points: 10}]}
+};
+export function ruleScore(rule: Rule, count: number): number {
+    if (rule.kind !== 'speaking-total') return count * rule.points;
+    if (!rule.kpi) return 0;
+    if (count < rule.kpi.minRequired) return -rule.kpi.penalty;
+    return [...rule.kpi.rewards].reverse().find(t => count >= t.min)?.points ?? 0;
+}
+export function speakingKpiLabel(rule: Rule, count: number): string {
+    if (rule.kind !== 'speaking-total' || !rule.kpi) return '';
+    if (count < rule.kpi.minRequired) return 'Không đủ KPI (' + count + '/' + rule.kpi.minRequired + ')';
+    const bonus = ruleScore(rule, count);
+    return bonus > 0 ? 'Đạt mốc: +' + bonus + ' điểm' : 'Đạt KPI, chưa tới mốc thưởng';
+}
 export const defaultConfig: Config = { base: 100, mode: 'sum', bonusAttendance: 10, bonusUniform: 10, bonusClean: 15, lastDutyDays: 1, violationDuty: true, preferMaleTrash: true, rows: 5, cols: 8, fundTarget: 100000, rewardWins: 3, conductBands: [{ min: 100, level: 'Tốt' }, { min: 80, level: 'Khá' }, { min: 60, level: 'Đạt' }, { min: -99999, level: 'Chưa đạt' }], rules: [
         { id: 'late', name: 'Đi học trễ', category: 'attendance', points: -5 }, { id: 'absence-permit', name: 'Nghỉ học có phép', category: 'absence', points: -2 }, { id: 'absence', name: 'Nghỉ không phép', category: 'absence', points: -5 }, { id: 'skip', name: 'Cúp tiết / bỏ chào cờ', category: 'absence', points: -10 },
         { id: 'grade8', name: 'Kiểm tra bài cũ: 8 điểm', category: 'learning', points: 5 }, { id: 'grade9', name: 'Kiểm tra bài cũ: 9 điểm', category: 'learning', points: 10 }, { id: 'grade10', name: 'Kiểm tra bài cũ: 10 điểm', category: 'learning', points: 15 },
-        { id: 'speak8', name: 'Phát biểu từ 8 lần/tuần', category: 'speaking', points: 5, limit: 1 }, { id: 'speak12', name: 'Phát biểu từ 12 lần/tuần', category: 'speaking', points: 10, limit: 1 }, { id: 'speak20', name: 'Phát biểu từ 20 lần/tuần', category: 'speaking', points: 15, limit: 1 }, { id: 'speak30', name: 'Phát biểu từ 30 lần/tuần', category: 'speaking', points: 25, limit: 1 },
+        defaultSpeakingRule,
         { id: 'unlearned', name: 'Không thuộc bài / dưới 5 điểm', category: 'learning', points: -10 }, { id: 'notes', name: 'Không chép bài', category: 'learning', points: -10 }, { id: 'homework', name: 'Không làm bài tập', category: 'learning', points: -5 }, { id: 'uniform', name: 'Sai đồng phục, tác phong', category: 'uniform', points: -5 }, { id: 'noise', name: 'Mất trật tự', category: 'discipline', points: -10 }, { id: 'duty', name: 'Không tham gia trực / lao động', category: 'discipline', points: -20 }, { id: 'litter', name: 'Xả rác', category: 'discipline', points: -5 }, { id: 'rude', name: 'Nói tục / vô lễ', category: 'discipline', points: -20 }, { id: 'phone', name: 'Sử dụng điện thoại trong giờ', category: 'discipline', points: -20 }
     ] };
 export const roleLabels: Record<string, string> = { leader: 'Lớp trưởng', study: 'Lớp phó học tập', discipline: 'Lớp phó nề nếp', movement: 'Lớp phó phong trào', group: 'Tổ trưởng', treasurer: 'Thủ quỹ' };
@@ -81,8 +100,24 @@ export function validateConfig(c: any): Config {
     for (const r of c.rules) {
         if (!r.id || ids.has(r.id) || typeof r.name !== 'string' || !r.name.trim() || r.name.length > 150 || !['attendance', 'absence', 'learning', 'speaking', 'uniform', 'discipline', 'movement'].includes(r.category) || !Number.isInteger(r.points) || Math.abs(r.points) > 1000 || (r.limit !== undefined && (!Number.isInteger(r.limit) || r.limit < 1 || r.limit > 100)))
             throw Error('Quy tắc điểm không hợp lệ');
+        if (r.kind !== undefined && r.kind !== 'speaking-total') throw Error('Loại quy tắc chưa hợp lệ');
+        if (r.kind === 'speaking-total') {
+            if (r.category !== 'speaking' || r.points !== 0 || r.limit !== undefined || !r.kpi ||
+                !Number.isInteger(r.kpi.minRequired) || r.kpi.minRequired < 1 || r.kpi.minRequired > 100 ||
+                !Number.isInteger(r.kpi.penalty) || r.kpi.penalty < 0 || r.kpi.penalty > 1000 ||
+                !Array.isArray(r.kpi.rewards) || r.kpi.rewards.length > 12 ||
+                r.kpi.rewards.some((t: any) => !Number.isInteger(t.min) || t.min <= r.kpi.minRequired || t.min > 100 ||
+                    !Number.isInteger(t.points) || t.points < 0 || t.points > 1000))
+                throw Error('Mốc KPI phát biểu không hợp lệ');
+            const sorted = r.kpi.rewards.map((t: any) => t.min);
+            if (new Set(sorted).size !== sorted.length || sorted.some((x: number, i: number) => i > 0 && x <= sorted[i-1]))
+                throw Error('Các mốc thưởng phải tăng dần và không trùng nhau');
+        } else if (r.kpi !== undefined) throw Error('Chỉ quy tắc KPI được có mốc phát biểu');
         ids.add(r.id);
     }
+    if (c.rules.some((r: Rule) => r.kind === 'speaking-total') &&
+        c.rules.filter((r: Rule) => r.category === 'speaking').length !== 1)
+        throw Error('KPI phát biểu không được dùng cùng quy tắc phát biểu cũ.');
     if (!Number.isInteger(c.rewardWins) || c.rewardWins < 1 || c.rewardWins > 6)
         throw Error('Số tuần khen thưởng phải từ 1 đến 6');
     for (const k of ['bonusAttendance', 'bonusUniform', 'bonusClean', 'fundTarget'])
