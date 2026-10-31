@@ -113,3 +113,12 @@ Mỗi tài khoản đang hoạt động có thể tạo nhóm học, mời bằn
 - Đồng hồ tập trung 25/5 riêng từng người, không ảnh hưởng cuộc gọi. Avatar emoji hoặc ảnh được thu nhỏ 160×160 và lưu qua API có xác thực.
 
 **Kết nối mạng:** mặc định dùng STUN Cloudflare và truyền media trực tiếp giữa thiết bị; một số mạng NAT/firewall không kết nối được nếu thiếu TURN. Muốn có relay, cấu hình bí mật runtime `STUDY_TURN_KEY_ID` và `STUDY_TURN_API_TOKEN` từ Cloudflare Realtime TURN. API cấp ICE tạm thời 24 giờ cho phiên trong phòng; frontend làm mới mỗi 6 giờ. Có thể phát sinh phí nhà cung cấp; dự án không tự mua hoặc provision TURN. Chưa kiểm thử gọi qua các mạng NAT khác nhau hay relay production. Không tích hợp Zoom/Google Meet, không ghi hình cuộc gọi.
+
+
+## Bảng thi đua trên điện thoại và KPI phát biểu
+
+Trên màn hình nhỏ, **Bảng thi đua tổ** hiển thị từng học sinh theo thẻ, cùng một danh sách chọn quy tắc. Chọn quy tắc rồi nhập lần lượt cho cả tổ, chuyển sang quy tắc khác mà không làm mất các ô chưa lưu; bấm **Lưu** để ghi. Trên máy tính vẫn dùng bảng Excel có cột học sinh cố định.
+
+Trong **Cấu hình → Danh mục cộng / trừ điểm**, giáo viên có thể kéo thả quy tắc trên máy tính hoặc dùng mũi tên lên/xuống trên điện thoại để đổi thứ tự cột, sau đó lưu cấu hình. Nút **Bật KPI phát biểu** thay các quy tắc phát biểu cũ bằng một cột tổng phát biểu/tuần. Lịch sử tuần đã chốt không thay đổi.
+
+Mặc định KPI: từ **0 đến 3** lần ghi nhận trừ **5** điểm và đánh dấu vi phạm **Không đủ KPI**; từ **4 đến 7** lần không cộng/trừ; từ **8 đến 11** lần cộng **5** điểm; từ **12** lần cộng **10** điểm. Giáo viên được tự thay số lần tối thiểu, mức trừ, thêm/xóa các mốc cộng và số điểm. Một học sinh chỉ được **một mốc thưởng cao nhất**, không cộng dồn các mốc. Chưa nhập ô KPI sẽ không tự phạt; nhập số **0** sẽ ghi nhận không phát biểu và áp dụng mức trừ. Bảng nhập thay thế ghi nhận cũ cùng quy tắc, không cộng chồng. Điểm chỉ trở thành chính thức sau khi giáo viên duyệt báo cáo; tuần đã chốt bất biến.
