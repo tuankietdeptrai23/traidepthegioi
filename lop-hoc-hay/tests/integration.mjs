@@ -71,7 +71,7 @@ await test('Duplicate IDs rejected without creating a partial account',async()=>
 await test('Logout revokes token and cookie has required protections',async()=>{const result=await auth.login('hs12a2.99','Reset-test-only-456','192.0.2.6');globalThis.__headers=new Headers({cookie:'lhy_session='+result.token});await auth.logout();assert.equal(await auth.currentUser(),null);const cookie=auth.sessionCookie(result.token,true);assert.match(cookie,/HttpOnly/);assert.match(cookie,/Secure/);assert.match(cookie,/SameSite=Lax/);assert.match(cookie,/Max-Age=7776000/)});
 await test('Teachers import a name list and auto-create accent-free IDs with unique suffixes',async()=>{as('owner@example.com');await action({action:'saveAccount',email:'teacher@example.com',loginId:'giaovien',name:'Giáo viên',role:'teacher',active:true,password:'Teacher-test-only-123'});as('teacher@example.com');const r=await send('importStudents',{rows:[{name:'Đặng Thị Mỹ Ánh',gender:'female'},{name:'Đặng Thị Mỹ Ánh',gender:'female'}]});assert.deepEqual(r.createdAccounts.map(x=>x.loginId),['dangthimyanh','dangthimyanh2']);const user=sqlite.prepare('SELECT * FROM users WHERE login_id=?').get('dangthimyanh');assert.equal(user.role,'student');assert.equal(user.must_change_password,1);assert.ok(await auth.verifyPassword('12345678',user.password_salt,user.password_hash))});
 await test('Ordinary students cannot edit spreadsheet cells',async()=>{as('s2@example.com');await denied(()=>send('saveSheet',{week:'2026-11-09',groupId:g1.id,cells:[{studentId:s2.id,ruleId:'late',count:2}]}),403)});
-await test('Group leader can edit only their own spreadsheet',async()=>{as('s1@example.com');await send('saveSheet',{week:'2026-11-09',groupId:g1.id,subject:'Toán',cells:[{studentId:s2.id,ruleId:'late',count:2},{studentId:s2.id,ruleId:'grade9',count:1}]});await denied(()=>send('saveSheet',{week:'2026-11-09',groupId:g2.id,cells:[{studentId:s3.id,ruleId:'late',count:1}]}),403);const d=(await state(classId)).detail;assert.equal(d.sheets['2026-11-09'].rows.find(r=>r.id===s2.id).counts.late,2)});
+await test('Group leader can edit only their own spreadsheet',async()=>{as('s1@example.com');await send('saveSheet',{week:'2026-11-09',groupId:g1.id,subject:'Toán',cells:[{studentId:s2.id,ruleId:'late',count:2},{studentId:s2.id,ruleId:'grade9',count:1,subject:'Toán'}]});await denied(()=>send('saveSheet',{week:'2026-11-09',groupId:g2.id,cells:[{studentId:s3.id,ruleId:'late',count:1}]}),403);const d=(await state(classId)).detail;assert.equal(d.sheets['2026-11-09'].rows.find(r=>r.id===s2.id).counts.late,2)});
 await test('Public class spreadsheet hides pending values and shows approved values after review',async()=>{as('s2@example.com');let d=(await state(classId)).detail;assert.equal(d.sheets['2026-11-09'].rows.find(r=>r.id===s2.id).counts.late,0);as('s1@example.com');await send('submitReport',{week:'2026-11-09',groupId:g1.id});await denied(()=>send('saveSheet',{week:'2026-11-09',groupId:g1.id,cells:[{studentId:s2.id,ruleId:'late',count:3}]}),409);as('teacher@example.com');d=(await state(classId)).detail;const rep=d.reports.find(r=>r.week==='2026-11-09'&&r.groupId===g1.id);await send('reviewReport',{id:rep.id,status:'approved'});as('s2@example.com');d=(await state(classId)).detail;assert.equal(d.sheets['2026-11-09'].rows.find(r=>r.id===s2.id).counts.late,2);assert.ok(d.entries.some(e=>e.week==='2026-11-09'&&e.subject==='Toán'&&e.grade==='9'&&e.status==='approved'))});
 await test('Spreadsheet corrections replace old counts without double scoring',async()=>{as('teacher@example.com');let d=(await state(classId)).detail;const rep=d.reports.find(r=>r.week==='2026-11-09'&&r.groupId===g1.id);await send('reviewReport',{id:rep.id,status:'returned',note:'Điều chỉnh số lần'});as('s1@example.com');await send('saveSheet',{week:'2026-11-09',groupId:g1.id,cells:[{studentId:s2.id,ruleId:'late',count:3}]});await send('submitReport',{week:'2026-11-09',groupId:g1.id});as('teacher@example.com');await send('reviewReport',{id:rep.id,status:'approved'});d=(await state(classId)).detail;const row=d.sheets['2026-11-09'].rows.find(r=>r.id===s2.id);assert.equal(row.counts.late,3);assert.equal(row.score,195)});
 await test('Seating maps students into column groups and revokes moved group leadership',async()=>{as('teacher@example.com');await send('saveSeats',{seats:[{id:s1.id,seat:8},{id:s2.id,seat:1}]});const a=sqlite.prepare('SELECT group_id,roles FROM students WHERE id=?').get(s1.id);const b=sqlite.prepare('SELECT group_id FROM students WHERE id=?').get(s2.id);assert.equal(a.group_id,g2.id);assert.ok(!JSON.parse(a.roles).includes('group'));assert.equal(b.group_id,g1.id);await denied(()=>send('saveSeats',{seats:[{id:s1.id,seat:1},{id:s2.id,seat:1}]}),400)});
@@ -134,6 +134,43 @@ await test('Weekly speaking total stores explicit zero without scoring an empty 
   assert.equal(active().length,0);
   d=(await state(classId)).detail;
   assert.equal(d.sheets[w].rows.find(r=>r.id===s2.id).recorded[ruleId],false);
+});
+
+
+await test('School learning rules require a valid subject',async()=>{
+  as('teacher@example.com');
+  const w='2026-12-07';
+  await denied(()=>send('saveSheet',{week:w,groupId:g1.id,cells:[{studentId:s2.id,ruleId:'unlearned',count:1}]}),400);
+  await denied(()=>send('addEntry',{week:w,studentId:s2.id,ruleId:'unlearned',count:1,subject:'Không rõ'}),400);
+  await send('saveSheet',{week:w,groupId:g1.id,cells:[
+    {studentId:s2.id,ruleId:'unlearned',subject:'Toán',count:1},
+    {studentId:s2.id,ruleId:'unlearned',subject:'Ngữ văn',count:2}
+  ]});
+  const row=(await state(classId)).detail.sheets[w].rows.find(x=>x.id===s2.id);
+  assert.equal(row.subjectCounts['unlearned|Toán'],1);
+  assert.equal(row.subjectCounts['unlearned|Ngữ văn'],2);
+  await send('saveSheet',{week:w,groupId:g1.id,cells:[{studentId:s2.id,ruleId:'unlearned',subject:'Toán',count:3}]});
+  const current=sqlite.prepare("SELECT subject,count FROM entries WHERE student_id=? AND week=? AND rule_id='unlearned' AND status='pending' ORDER BY subject").all(s2.id,w);
+  assert.equal(current.length,2);
+  assert.equal(current.find(x=>x.subject==='Toán').count,3);
+  assert.equal(current.find(x=>x.subject==='Ngữ văn').count,2);
+});
+await test('Study deputy and class leader may approve submitted reports but not lock weeks',async()=>{
+  as('teacher@example.com');
+  sqlite.prepare('UPDATE students SET roles=? WHERE id=?').run(JSON.stringify(['leader']),s1.id);
+  sqlite.prepare('UPDATE students SET roles=? WHERE id=?').run(JSON.stringify(['study']),s2.id);
+  as('teacher@example.com');
+  await send('submitReport',{week:'2026-12-07',groupId:g1.id});
+  const rep=(await state(classId)).detail.reports.find(x=>x.week==='2026-12-07'&&x.groupId===g1.id);
+  as('s4@example.com');await denied(()=>send('reviewReport',{id:rep.id,status:'approved'}),403);
+  as('s2@example.com');await send('reviewReport',{id:rep.id,status:'approved'});
+  assert.equal((await state(classId)).detail.reports.find(x=>x.id===rep.id).status,'approved');
+  await denied(()=>send('lockWeek',{week:'2026-12-07'}),403);
+  await denied(()=>send('reviewReport',{id:rep.id,status:'returned',note:'Thử'}),409);
+  as('teacher@example.com');await send('submitReport',{week:'2026-12-14',groupId:g2.id});
+  const rep2=(await state(classId)).detail.reports.find(x=>x.week==='2026-12-14'&&x.groupId===g2.id);
+  as('s1@example.com');await send('reviewReport',{id:rep2.id,status:'approved'});
+  assert.equal((await state(classId)).detail.reports.find(x=>x.id===rep2.id).status,'approved');
 });
 
 console.log(`\n${passed} integration checks passed.`);sqlite.close();
