@@ -11,3 +11,85 @@
 
 /* Direct Excel/CSV roster upload */
 .import-file-picker{display:flex;flex-direction:column;gap:8px;margin-bottom:16px;padding:14px;border:1px dashed #cbd9bc;border-radius:9px;background:#f8fbf4}.import-file-picker input[type=file]{width:100%;max-width:100%;font-size:12px;color:#526b45}.import-file-picker input[type=file]::file-selector-button{margin-right:12px;padding:8px 12px;border:1px solid #cbd9bc;border-radius:6px;background:white;color:#47623f;cursor:pointer}.import-file-picker .muted{font-size:10px;line-height:1.6}.roster-import>.info{margin-bottom:14px}
+
+/* Reorderable rules and the one-value-per-week speaking KPI */
+.rule-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.rule-row{grid-template-columns:95px minmax(150px,3fr) minmax(100px,1.3fr) 78px 105px 36px;border:1px solid #e6ecdd;border-radius:9px;padding:10px;background:white}
+.rule-row.dragging{opacity:.55;border-style:dashed}
+.rule-controls{display:flex;gap:3px;align-items:center;color:#8a9d74;min-width:0}
+.rule-controls .icon-btn{width:25px;height:28px;padding:4px;display:grid;place-items:center}
+.rule-controls .icon-btn:disabled{opacity:.25;cursor:not-allowed}
+.rule-index{display:inline-grid;place-items:center;min-width:20px;height:24px;border-radius:5px;background:#edf3e5;font-size:11px}
+.rule-field{display:flex;flex-direction:column;min-width:0;gap:4px}
+.rule-field>span{font-size:9px;color:#849672}
+.rule-field input,.rule-field select{width:100%;min-width:0}
+.rule-field :disabled{background:#f4f6f1;color:#9aa69a}
+.rule-delete{justify-self:center}
+.kpi-config{grid-column:1/-1;padding:14px;background:#f6f9ef;border:1px solid #e1ead5;border-radius:9px;display:flex;flex-direction:column;gap:14px}
+.kpi-heading{display:flex;flex-direction:column;gap:5px}
+.kpi-heading b{font-size:12px;color:#5e784a}
+.kpi-heading small{font-size:10px;color:#869b70;line-height:1.6}
+.kpi-base,.kpi-tier{display:flex;gap:12px;align-items:end;flex-wrap:wrap}
+.kpi-base>label,.kpi-tier>label{display:flex;flex:1;min-width:110px;flex-direction:column;gap:6px;font-size:10px;color:#6c805e}
+.kpi-base input,.kpi-tier input{width:100%;max-width:210px;padding:9px}
+.kpi-rewards{display:grid;gap:8px}
+.kpi-tier{padding:10px;background:white;border:1px solid #e6eedc;border-radius:7px}
+.kpi-tier .icon-btn{margin-bottom:3px}
+.kpi-config>.btn{align-self:start}
+.excel-table th.kpi-col{background:#eaf0f9;color:#577c9a}
+.mobile-sheet-filter,.mobile-sheet-cards{display:none}
+@media (max-width:900px){
+ .rule-row{grid-template-columns:100px minmax(170px,1fr) minmax(125px,1fr) 80px 95px 32px;overflow:visible}
+ .rule-list{min-width:0}
+}
+@media (max-width:700px){
+ .excel-section,.excel-group{min-width:0;max-width:100%}
+ .excel-section .section-head{display:flex;flex-direction:column;align-items:stretch;gap:12px;padding:16px}
+ .excel-section .section-head h3{font-size:15px}
+ .sheet-tabs{width:100%;justify-content:stretch}
+ .sheet-tabs button{flex:1;justify-content:center;font-size:11px;min-height:40px}
+ .sheet-toolbar{padding:0 15px 14px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px}
+ .sheet-toolbar select{width:100%;min-width:0;min-height:42px;font-size:13px}
+ .sheet-toolbar input{grid-column:1/-1;grid-row:2;width:100%;max-width:100%;font-size:13px}
+ .sheet-toolbar .btn{grid-column:2;grid-row:1;min-height:42px;margin:0;white-space:nowrap;font-size:12px}
+ .sheet-toolbar>span{grid-column:1/-1}
+ .sheet-hint,.sheet-message{margin:0 15px 12px;padding:10px;font-size:11px}
+ .excel-group-title{padding:12px 15px;flex-wrap:wrap;gap:6px;font-size:12px}
+ .excel-group-title small{width:100%;margin:0;font-size:10px}
+ .excel-scroll{display:none}
+ .sheet-legend{display:none}
+ .mobile-sheet-filter{display:flex;flex-direction:column;gap:7px;padding:12px 15px 18px;background:#f7faf2;border-top:1px solid #e6ecdd}
+ .mobile-sheet-filter label{font-size:12px;color:#617c53;font-weight:600}
+ .mobile-sheet-filter select{width:100%;min-width:0;font-size:14px;padding:12px;border:1px solid #cbdabf;border-radius:8px;background:white;color:#365830}
+ .mobile-sheet-filter small{font-size:11px;line-height:1.6;color:#899b79}
+ .mobile-sheet-cards{display:grid;grid-template-columns:1fr;gap:7px;padding:10px 12px 17px}
+ .mobile-sheet-row{display:grid;grid-template-columns:minmax(0,1fr) 92px;gap:9px;align-items:center;background:white;border:1px solid #e6eddf;border-radius:10px;padding:10px}
+ .mobile-student{display:flex;gap:6px;align-items:center;min-width:0;flex-wrap:wrap}
+ .mobile-student small{color:#829c73;font-size:10px;background:#f3f7ea;padding:4px 6px;border-radius:5px}
+ .mobile-student b{font-size:12px;color:#426044;overflow-wrap:anywhere;flex:1;min-width:90px}
+ .mobile-student span{font-size:10px;color:#8ba078;flex-basis:100%}
+ .mobile-entry input{width:100%;min-width:0;min-height:44px;font-size:16px;text-align:center;border:1px solid #cbdabf;border-radius:8px;padding:8px;background:#fff}
+ .mobile-entry input:disabled{background:#f4f7ef}
+ .mobile-entry span{display:block;text-align:center;font-size:13px;color:#637d54}
+ .mobile-kpi-status{grid-column:1/-1;background:#f2f5ef;padding:6px 10px;border-radius:6px;color:#7a8b6d;font-size:10px}
+ .mobile-kpi-status.is-violation{background:#fff0e9;color:#a3583d}
+ .mobile-kpi-status.is-reward{background:#eef7e6;color:#4f8145}
+ .config-editor{padding:5px 13px}
+ .config-editor .section-head{flex-direction:column;align-items:stretch;gap:12px}
+ .config-editor .rule-actions{width:100%}
+ .config-editor .rule-actions .btn{flex:1;justify-content:center;min-height:40px}
+ .rule-row{grid-template-columns:repeat(2,minmax(0,1fr)) 38px;gap:8px;padding:10px}
+ .rule-controls{grid-column:1/3;gap:10px}
+ .rule-controls .icon-btn{width:38px;height:36px;background:#f0f5e9;border-radius:7px}
+ .rule-controls>svg{display:none}
+ .rule-field.name{grid-column:1/4}
+ .rule-field.category{grid-column:1/3}
+ .rule-field.points{grid-column:1}
+ .rule-field.limit{grid-column:2}
+ .rule-delete{grid-column:3;grid-row:2}
+ .rule-field input,.rule-field select{min-height:38px;font-size:13px}
+ .kpi-config{grid-column:1/4}
+ .kpi-base,.kpi-tier{gap:8px}
+ .kpi-base>label,.kpi-tier>label{min-width:100px}
+ .kpi-base input,.kpi-tier input{max-width:none}
+}
