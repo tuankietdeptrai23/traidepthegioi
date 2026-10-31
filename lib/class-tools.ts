@@ -1,0 +1,18 @@
+import {monday,dayPlus,type Config,type Row} from './domain';
+export const vietnamToday=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Ho_Chi_Minh'}).format(new Date());
+export function reportDate(config:Config,week:string,raw:unknown):string {
+ if(config.reportMode!=='daily') {if(raw)throw Error('Lớp đang báo cáo theo tuần.');return ''}
+ if(typeof raw!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(raw)||!Number.isFinite(Date.parse(raw+'T00:00:00Z'))||new Date(raw+'T00:00:00Z').toISOString().slice(0,10)!==raw||monday(new Date(raw))!==week)throw Error('Chọn ngày hợp lệ trong tuần báo cáo.');
+ if(raw>vietnamToday())throw Error('Chưa thể báo cáo ngày tương lai.');return raw;
+}
+export function speakingAllowed(config:Config,date:string,today=vietnamToday()):boolean {
+ return config.reportMode!=='daily'||(date===today&&new Date(date+'T00:00:00Z').getUTCDay()===5||(config.speakingOpenDates||[]).includes(date)&&date<=today);
+}
+export function requiredReportDates(config:Config,week:string):string[]{return config.reportMode==='daily'?(config.reportDays||[1,2,3,4,5]).map(d=>dayPlus(week,d-1)):['']}
+export function monthlyProfile(student:Row,month:string,entries:Row[],grades:Row[],conduct:Row[],awards:Row[]) {
+ const records=entries.filter(e=>e.studentId===student.id&&e.status==='approved'&&(e.reportDate||e.week).startsWith(month));
+ const marks=grades.filter(g=>g.studentId===student.id&&g.confirmed&&g.date.startsWith(month));
+ const subjects=[...new Set([...marks.map(g=>g.subject),...records.filter(e=>e.subject&&e.grade!=='').map(e=>e.subject)])];
+ return {student:{id:student.id,name:student.name,groupId:student.groupId},month,delta:records.reduce((n,e)=>n+e.delta,0),violations:records.filter(e=>e.delta<0),achievements:records.filter(e=>e.delta>0),subjects:subjects.map(subject=>({subject,grades:[...marks.filter(g=>g.subject===subject).map(g=>({value:g.value,date:g.date,source:'Giáo viên xác nhận'})),...records.filter(e=>e.subject===subject&&e.grade!=='').map(e=>({value:e.grade,date:e.reportDate||e.week,source:'Thi đua đã duyệt'}))]})),conduct:conduct.filter(c=>c.studentId===student.id&&c.period.includes(month)),awards:awards.filter(a=>a.studentId===student.id&&a.month===month&&a.status==='active'),generatedAt:new Date().toISOString(),dateNote:'Ghi nhận cũ theo tuần được xếp tháng theo ngày đầu tuần. Chỉ tổng hợp dữ liệu đã duyệt; không tự quyết định hạnh kiểm.'};
+}
+export const auditLabels:Record<string,string>={saveStudent:'Cập nhật học sinh / chức vụ',saveSeats:'Xếp sơ đồ lớp',saveConfig:'Thay đổi quy tắc',reorderRules:'Sắp xếp quy tắc',saveSheet:'Lưu bảng thi đua',saveAcademicSheet:'Lưu điểm theo môn',addEntry:'Thêm ghi nhận',rejectEntry:'Loại ghi nhận',submitReport:'Gửi báo cáo',reviewReport:'Duyệt / trả báo cáo',lockWeek:'Chốt tuần & xếp trực',addDuty:'Phân công trực',updateDuty:'Cập nhật trực',requestDutySwap:'Đề nghị đổi trực',respondDutySwap:'Trả lời đổi trực',reviewDutySwap:'Duyệt đổi trực',addPrivateMessage:'Gửi thư riêng',resolveFeedback:'Phản hồi học sinh',saveBadgeType:'Cài đặt huy hiệu',awardBadge:'Trao huy hiệu',revokeBadge:'Thu hồi huy hiệu',saveMonthlyProfile:'Lập hồ sơ tháng',approveMonthlyProfile:'Duyệt hồ sơ tháng',addFund:'Ghi thu chi',reviewFund:'Duyệt quỹ',reverseFund:'Điều chỉnh quỹ',addConduct:'Đánh giá rèn luyện',addGrade:'Nhập điểm',deleteGrade:'Xóa điểm tự ghi',importStudents:'Nhập danh sách',archiveStudent:'Lưu trữ học sinh',addFeedback:'Gửi nhận xét',addNotice:'Đăng thông báo',addActivity:'Tạo phong trào',joinActivity:'Tham gia phong trào',completeActivity:'Hoàn thành phong trào',sampleClass:'Tạo dữ liệu mẫu'};

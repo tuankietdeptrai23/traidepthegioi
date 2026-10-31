@@ -1,0 +1,48 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1793369993047,
+      "tag": "0000_slim_tattoo",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1793370797879,
+      "tag": "0001_flaky_sunspot",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1793414764843,
+      "tag": "0002_furry_scarlet_spider",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1793415288571,
+      "tag": "0003_normal_toro",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1793416577795,
+      "tag": "0004_pale_gamma_corps",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1793449323809,
+      "tag": "0005_loose_white_queen",
+      "breakpoints": true
+    }
+  ]
+}
