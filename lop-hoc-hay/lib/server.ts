@@ -2,7 +2,7 @@ import { eq, and, or, inArray, sql } from 'drizzle-orm';
 import { getDb } from '@/db';
 import * as t from '@/db/schema';
 import { currentUser, safeUser, normalizeLogin, passwordRecord } from './auth';
-import { defaultConfig, parse, canReport, monday, snapshot, dutyPlan, validateConfig, studentLoginBase, seatGroupIndex, type Row, type Config } from './domain';
+import { defaultConfig, parse, canReport, monday, snapshot, dutyPlan, validateConfig, ruleScore, studentLoginBase, seatGroupIndex, type Row, type Config } from './domain';
 export class HttpError extends Error {
     constructor(public status: number, message: string) { super(message); }
 }
@@ -64,7 +64,7 @@ export async function state(classId?: string) {
     const weekly = [...new Set([monday(), ...entries.map(e => e.week), ...periods.map(p => p.week), ...reports.map(r => r.week)])];
     const ranks = Object.fromEntries(weekly.map(w => { const p = periods.find(p => p.week === w && p.status === 'locked'); return [w, p ? parse<Row>(p.snapshot, {}).standings : snapshot(groups, students, entries.filter(e => e.week === w), c.config).standings]; }));
     const historyScores = Object.fromEntries(periods.filter(p => p.status === 'locked').map(p => { const sn = parse<Row>(p.snapshot, {}); return [p.week, (sn.students || []).filter((s: Row) => ids.has(s.id)).map((s: Row) => ({ id: s.id, name: s.name, groupId: s.groupId, score: s.score }))]; }));
-    const sheets=Object.fromEntries(weekly.map(w=>{const locked=periods.find(p=>p.week===w&&p.status==='locked');const snap=locked?parse<Row>(locked.snapshot,{}):null;const rules=(snap?.config||c.config).rules;const roster=(snap?.students||students).filter((s:Row)=>s.active);const records=(snap?.entries||entries.filter(e=>e.week===w));return [w,{rules,base:(snap?.config||c.config).base,rows:roster.map((s:Row)=>{const editable=teacher||canReport(roles,own?.groupId||'',s.groupId);const seen=records.filter((e:Row)=>e.studentId===s.id&&e.groupId===s.groupId&&(e.status==='approved'||(editable&&e.status==='pending')));return {id:s.id,name:s.name,groupId:s.groupId,counts:Object.fromEntries(rules.map((r:Row)=>[r.id,seen.filter((e:Row)=>e.ruleId===r.id).reduce((n:number,e:Row)=>n+e.count,0)])),score:snap?s.score:c.config.base+records.filter((e:Row)=>e.studentId===s.id&&e.status==='approved').reduce((n:number,e:Row)=>n+e.delta,0)}})}]}));
+    const sheets=Object.fromEntries(weekly.map(w=>{const locked=periods.find(p=>p.week===w&&p.status==='locked');const snap=locked?parse<Row>(locked.snapshot,{}):null;const rules=(snap?.config||c.config).rules;const roster=(snap?.students||students).filter((s:Row)=>s.active);const records=(snap?.entries||entries.filter(e=>e.week===w));return [w,{rules,base:(snap?.config||c.config).base,rows:roster.map((s:Row)=>{const editable=teacher||canReport(roles,own?.groupId||'',s.groupId);const seen=records.filter((e:Row)=>e.studentId===s.id&&e.groupId===s.groupId&&(e.status==='approved'||(editable&&e.status==='pending')));return {id:s.id,name:s.name,groupId:s.groupId,counts:Object.fromEntries(rules.map((r:Row)=>[r.id,r.kind==='speaking-total'?(seen.find((e:Row)=>e.ruleId===r.id)?.count??0):seen.filter((e:Row)=>e.ruleId===r.id).reduce((n:number,e:Row)=>n+e.count,0)])),recorded:Object.fromEntries(rules.filter((r:Row)=>r.kind==='speaking-total').map((r:Row)=>[r.id,seen.some((e:Row)=>e.ruleId===r.id)])),score:snap?s.score:c.config.base+records.filter((e:Row)=>e.studentId===s.id&&e.status==='approved').reduce((n:number,e:Row)=>n+e.delta,0)}})}]}));
     common.detail = { ...c.cls, config: c.config, teacher, ownId: own?.id, roles, groups, students: students.map(s => teacher ? s : ({ ...s, email: s.id === own?.id ? s.email : '', roles: s.roles })), periods: periods.map(p => ({ ...p, snapshot: undefined })), entries: entries.filter(e => ids.has(e.studentId)), reports: reports.map(r => teacher || canReport(roles, own?.groupId || '', r.groupId) ? r : { ...r, note: '', createdBy: '' }), grades: grades.filter(g => (teacher || g.studentId === own?.id) && (g.confirmed || g.createdBy === user.email)), conduct: conduct.filter(x => teacher || x.studentId === own?.id), fundSummary: {income: funds.filter(f=>f.status==='approved'&&f.type==='income').reduce((n,f)=>n+f.amount,0),expense:funds.filter(f=>f.status==='approved'&&f.type==='expense').reduce((n,f)=>n+f.amount,0)}, funds: funds.filter(f => teacher || roles.includes('treasurer') || (f.status === 'approved' && (!f.studentId || f.studentId === own?.id))).map(f => teacher || roles.includes('treasurer') ? f : { ...f, proof: '', createdBy: '' }), activities, duties, notices, feedback: feedback.filter(f => teacher || f.createdBy === user.email), audit, ranks, historyScores, sheets };
     return common;
 }
@@ -153,10 +153,14 @@ export async function action(b: Row) {
             add(db.insert(t.groups).values({ id: uid(), classId, name }));
             break;
         }
-        case 'saveConfig':
+        case 'saveConfig': {
             needTeacher();
-            add(db.update(t.classes).set({ config: JSON.stringify(validateConfig(b.config)) }).where(eq(t.classes.id, classId)));
+            let checked: Config;
+            try { checked=validateConfig(b.config); }
+            catch (e) { fail(400, e instanceof Error ? e.message : 'Cấu hình chưa hợp lệ'); }
+            add(db.update(t.classes).set({ config: JSON.stringify(checked) }).where(eq(t.classes.id, classId)));
             break;
+        }
         case 'saveStudent': {
             needTeacher();
             const gs = await allGroups();
@@ -235,10 +239,10 @@ export async function action(b: Row) {
             if(!Array.isArray(b.cells)||!b.cells.length||b.cells.length>80)fail(400,'Mỗi lần lưu tối đa 80 ô đã thay đổi.');
             const members=await allStudents();const old=await db.select().from(t.entries).where(and(eq(t.entries.classId,classId),eq(t.entries.week,w),eq(t.entries.groupId,groupId)));
             const changes:Row[]=[];const keys=new Set();
-            for(const cell of b.cells){const member=members.find(x=>x.id===cell.studentId&&x.groupId===groupId&&x.active);if(!member)fail(403,'Chỉ được nhập học sinh trong tổ được giao');const rule=config.rules.find(x=>x.id===cell.ruleId);if(!rule)fail(400,'Quy tắc đã thay đổi. Hãy tải lại bảng.');const count=amount(cell.count,0,100);if(rule.limit&&count>rule.limit)fail(400,'Vượt giới hạn quy tắc: '+rule.name);const key=member.id+':'+rule.id;if(keys.has(key))fail(400,'Ô bị lặp');keys.add(key);changes.push({member,rule,count});}
-            for(const member of members.filter(x=>x.groupId===groupId)){const speaking=config.rules.filter(r=>r.category==='speaking').filter(r=>{const change=changes.find(x=>x.member.id===member.id&&x.rule.id===r.id);return change?change.count>0:old.some(e=>e.studentId===member.id&&e.ruleId===r.id&&e.status!=='rejected')});if(speaking.length>1)fail(400,'Mỗi học sinh chỉ áp dụng một mốc phát biểu/tuần.');}
+            for(const cell of b.cells){const member=members.find(x=>x.id===cell.studentId&&x.groupId===groupId&&x.active);if(!member)fail(403,'Chỉ được nhập học sinh trong tổ được giao');const rule=config.rules.find(x=>x.id===cell.ruleId);if(!rule)fail(400,'Quy tắc đã thay đổi. Hãy tải lại bảng.');const count=cell.count===null&&rule.kind==='speaking-total'?null:amount(cell.count,0,100);if(rule.limit&&count!==null&&count>rule.limit)fail(400,'Vượt giới hạn quy tắc: '+rule.name);const key=member.id+':'+rule.id;if(keys.has(key))fail(400,'Ô bị lặp');keys.add(key);changes.push({member,rule,count});}
+            for(const member of members.filter(x=>x.groupId===groupId)){const speaking=config.rules.filter(r=>r.category==='speaking').filter(r=>{const change=changes.find(x=>x.member.id===member.id&&x.rule.id===r.id);return change?(r.kind==='speaking-total'?change.count!==null:change.count>0):old.some(e=>e.studentId===member.id&&e.ruleId===r.id&&e.status!=='rejected')});if(speaking.length>1)fail(400,'Mỗi học sinh chỉ áp dụng một mốc phát biểu/tuần.');}
             for(let i=0;i<changes.length;i+=20){const chunk=changes.slice(i,i+20);add(db.update(t.entries).set({status:'rejected',reviewNote:'Thay thế bởi bảng nhập thi đua'}).where(and(eq(t.entries.classId,classId),eq(t.entries.week,w),eq(t.entries.groupId,groupId),or(...chunk.map(x=>and(eq(t.entries.studentId,x.member.id),eq(t.entries.ruleId,x.rule.id)))))))}
-            const values=changes.filter(x=>x.count>0).map(x=>({id:uid(),classId,week:w,studentId:x.member.id,groupId,ruleId:x.rule.id,ruleName:x.rule.name,category:x.rule.category,delta:x.rule.points*x.count,count:x.count,status:'pending',note:'Nhập qua bảng thi đua tổ',proof:'',grade:['grade8','grade9','grade10'].includes(x.rule.id)?x.rule.id.slice(5):'',subject:String(b.subject||'').slice(0,100),createdBy:user.email,createdAt:now(),reviewNote:''}));
+            const values=changes.filter(x=>x.rule.kind==='speaking-total'?x.count!==null:x.count>0).map(x=>({id:uid(),classId,week:w,studentId:x.member.id,groupId,ruleId:x.rule.id,ruleName:x.rule.name,category:x.rule.category,delta:ruleScore(x.rule,x.count),count:x.count,status:'pending',note:x.rule.kind==='speaking-total'&&x.count<x.rule.kpi.minRequired?'Không đủ KPI phát biểu':'Nhập qua bảng thi đua tổ',proof:'',grade:['grade8','grade9','grade10'].includes(x.rule.id)?x.rule.id.slice(5):'',subject:String(b.subject||'').slice(0,100),createdBy:user.email,createdAt:now(),reviewNote:''}));
             for(let i=0;i<values.length;i+=4)add(db.insert(t.entries).values(values.slice(i,i+4)));
             break;
         }
@@ -250,7 +254,7 @@ export async function action(b: Row) {
             const r = config.rules.find(r => r.id === b.ruleId);
             if (!r)
                 fail(400, 'Không tìm thấy quy tắc');
-            const count = amount(b.count || 1, 1, 100);
+            const count = r.kind === 'speaking-total' ? amount(b.count,0,100) : amount(b.count || 1, 1, 100);
             const rep = await db.select().from(t.reports).where(and(eq(t.reports.classId, classId), eq(t.reports.week, w), eq(t.reports.groupId, s.groupId))).get();
             if (rep && rep.status !== 'returned')
                 fail(409, 'Báo cáo tổ đã gửi; giáo viên cần trả lại trước khi bổ sung');
@@ -267,7 +271,7 @@ export async function action(b: Row) {
                 fail(400, 'Điểm kiểm tra phải khớp quy tắc đã chọn');
             if (grade && (!Number.isFinite(Number(grade)) || Number(grade) < 0 || Number(grade) > 10))
                 fail(400, 'Điểm phải từ 0 đến 10');
-            add(db.insert(t.entries).values({ id: uid(), classId, week: w, studentId: s.id, groupId: s.groupId, ruleId: r.id, ruleName: r.name, category: r.category, delta: r.points * count, count, status: 'pending', note: String(b.note || '').slice(0, 2000), proof: safeUrl(b.proof), grade, subject: String(b.subject || '').slice(0, 100), createdBy: user.email, createdAt: now() }));
+            add(db.insert(t.entries).values({ id: uid(), classId, week: w, studentId: s.id, groupId: s.groupId, ruleId: r.id, ruleName: r.name, category: r.category, delta: ruleScore(r,count), count, status: 'pending', note: r.kind==='speaking-total'&&count<r.kpi!.minRequired?'Không đủ KPI phát biểu':String(b.note || '').slice(0, 2000), proof: safeUrl(b.proof), grade, subject: String(b.subject || '').slice(0, 100), createdBy: user.email, createdAt: now() }));
             break;
         }
         case 'submitReport': {
