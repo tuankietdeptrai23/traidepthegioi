@@ -43,6 +43,13 @@
       "when": 1793449323809,
       "tag": "0005_loose_white_queen",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1793450375851,
+      "tag": "0006_long_wrecker",
+      "breakpoints": true
     }
   ]
 }
