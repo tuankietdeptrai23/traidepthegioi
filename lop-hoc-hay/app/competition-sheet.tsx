@@ -36,8 +36,8 @@ export default function CompetitionSheet({d,week,save,reorderRules,busy}:any){
  };
  const hasKpi=(s:Row,r:Rule)=>r.kind==='speaking-total'&&inputValue(s,r)!=='';
  const preview=(s:Row)=>{
-   const baseline=sheet.base+rules.reduce((n,r)=>r.kind==='speaking-total'?
-     n+(s.recorded?.[r.id]?ruleScore(r,s.counts[r.id]||0):0):n+(s.counts[r.id]||0)*r.points,0);
+   const baseline=s.previewScore??(sheet.base+rules.reduce((n,r)=>r.kind==='speaking-total'?
+     n+(s.recorded?.[r.id]?ruleScore(r,s.counts[r.id]||0):0):n+(s.counts[r.id]||0)*r.points,0));
    return baseline+Object.entries(draft).reduce((n,[k,v])=>{
      const [sid,rid,chosen='']=k.split('|');if(sid!==s.id)return n;
      const r=rules.find(rule=>rule.id===rid);if(!r)return n;

@@ -131,3 +131,13 @@ Mặc định KPI: từ **0 đến 3** lần ghi nhận trừ **5** điểm và 
 - Phòng học toàn cửa sổ giữ chia sẻ màn hình, chế độ thư viện, bảng công cụ và zoom 100–300% theo bước 25%.
 
 Kiểm tra: 64 kiểm tra tích hợp và 7 kiểm tra nhập danh sách; TypeScript và build production. UI được kiểm tra trên dữ liệu giả (gồm khung điện thoại 390 px), nguồn màn hình minh họa, duyệt/trả báo cáo và lưu theo từng môn. Cuộc gọi media thực giữa hai thiết bị, chia sẻ âm thanh và TURN chưa được xác minh trong môi trường trình duyệt kiểm thử. Không thay đổi schema/migration hay dữ liệu production trong lượt nâng cấp này.
+
+### Nhập điểm học tập bằng bảng Excel và mốc thuộc bài
+
+Chọn tổ, môn học và lượt kiểm tra (1–5 trong tuần), rồi nhập trực tiếp điểm 0–10 cho học sinh. Điểm 0 được lưu như điểm thật; ô trống là chưa ghi nhận. Có dán cột Điểm (kèm Ghi chú nếu cần) từ Excel và Enter / mũi tên để chuyển dòng. Các cột Thuộc bài, Không thuộc bài và Cộng/trừ thi đua được tính tự động; học sinh thường chỉ xem điểm của mình.
+
+Giáo viên/admin chỉnh mốc trong Cài đặt lớp → Mốc điểm thuộc bài. Các mốc tăng dần từ 0, phân loại thuộc/không thuộc và có mức điểm cộng/trừ riêng. Hệ thống áp dụng một mốc cao nhất phù hợp, không cộng dồn. Khi lớp chưa cấu hình mốc riêng, mốc 0/5/8/9/10 tham chiếu mức điểm các quy tắc hiện có (không có quy tắc thì 0 điểm thi đua). Đổi cấu hình không tự tính lại điểm đã ghi trước đó.
+
+Dữ liệu dùng bảng entries hiện có với ruleId có tiền tố `academic-sheet/<lượt>/`; không có migration hay reset dữ liệu. Sửa/xóa ô đánh dấu bản cũ rejected và giữ lịch sử. Môn, lượt và tổ khác không bị ghi đè; ghi nhận số lần trong bảng cũ được giữ riêng để tránh thao tác sửa ô thay mất điểm môn học. Giáo viên/cán sự vẫn duyệt báo cáo; tuần đã chốt và báo cáo đã gửi khóa nhập như trước. Xem trước tạm tính dùng delta của các ghi nhận để bao gồm cả điểm từ bảng môn học.
+
+Kiểm tra: 71 kiểm tra tích hợp và 7 kiểm tra nhập danh sách. Bao gồm ranh giới mốc, 0/ô trống/số thập phân, dữ liệu dán, quyền theo tổ/lớp, lưu từng môn/lượt, sửa/xóa giữ lịch sử, cấu hình không đổi điểm cũ và khóa theo báo cáo/tuần. UI thử bằng dữ liệu giả: nhập sáu mức điểm, tự phân cột, dán nhiều dòng, Enter chuyển dòng và giáo viên thay mốc.

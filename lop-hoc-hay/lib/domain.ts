@@ -8,7 +8,9 @@ export type Rule = {
     kind?: 'speaking-total';
     kpi?: SpeakingKpi;
 };
+export type AcademicBand = {min:number;points:number;kind:'learned'|'unlearned'};
 export type Config = {
+    academicBands?: AcademicBand[];
     base: number;
     mode: 'sum' | 'average';
     rules: Rule[];
@@ -127,6 +129,7 @@ export function validateConfig(c: any): Config {
     if (c.rules.some((r: Rule) => r.kind === 'speaking-total') &&
         c.rules.filter((r: Rule) => r.category === 'speaking').length !== 1)
         throw Error('KPI phát biểu không được dùng cùng quy tắc phát biểu cũ.');
+    if(c.academicBands!==undefined){const bands=c.academicBands;if(!Array.isArray(bands)||!bands.length||bands.length>20||bands[0]?.min!==0||bands.some((b:any,i:number)=>!b||!Number.isFinite(b.min)||b.min<0||b.min>10||Math.abs(b.min*10-Math.round(b.min*10))>1e-8||!Number.isInteger(b.points)||Math.abs(b.points)>1000||!['learned','unlearned'].includes(b.kind)||(i>0&&b.min<=bands[i-1].min)))throw Error('Mốc thuộc bài phải bắt đầu từ 0, tăng dần đến tối đa 10 và có mức cộng/trừ hợp lệ.');}
     if (!Number.isInteger(c.rewardWins) || c.rewardWins < 1 || c.rewardWins > 6)
         throw Error('Số tuần khen thưởng phải từ 1 đến 6');
     for (const k of ['bonusAttendance', 'bonusUniform', 'bonusClean', 'fundTarget'])
